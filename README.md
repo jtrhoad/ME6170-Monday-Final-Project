@@ -13,15 +13,3 @@ A Raspbot V2 mobile ground robot has been procured for each laboratory team to s
 
 - Add vscode-pdf extension.
 - Clone repository and make sure to pull new commits.
-
-## Usage
-
-- How to run the project locally (example commands)
-
-## Contributing
-
-- Notes for contributors or how to report issues
-
-## License
-
-- Add license information or leave as "TBD"
