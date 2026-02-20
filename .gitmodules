@@ -1,0 +1,3 @@
+[submodule "external/Raspbot-V2"]
+	path = external/Raspbot-V2
+	url = https://github.com/YahboomTechnology/Raspbot-V2
