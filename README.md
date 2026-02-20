@@ -11,8 +11,8 @@ A Raspbot V2 mobile ground robot has been procured for each laboratory team to s
 
 ## Getting Started
 
-- Prerequisites: list required tools (e.g., Python 3.10+, Node.js)
-- Installation: steps to install dependencies
+- Add vscode-pdf extension.
+- Clone repository and make sure to pull new commits.
 
 ## Usage
 
