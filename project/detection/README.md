@@ -5,6 +5,10 @@ We are in charge of setup and integration of all sensor data.
 
 ## Tasks List
 
+0. Get access to RasberryPi 5
+    - Set up serial connection
+    - Set up live telemetry feed (wireless data feed)
+    - Set up SSH between laptop and RP
 1. Read data
     - Ultrasonic Sensor
     - Color Sensor
