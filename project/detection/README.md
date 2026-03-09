@@ -23,4 +23,4 @@ We are in charge of setup and integration of all sensor data.
 
 ## Current Status
 
-Planning phase.
+Prep phase.
