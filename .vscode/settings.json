@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "./external/Libraries/raspbot"
+        "./external/Libraries/raspbot",
+        "./external/Libraries/lib"
     ]
 }
