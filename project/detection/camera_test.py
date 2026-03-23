@@ -6,6 +6,7 @@ at 30fps locally on the Pi. Press 'q' to quit.
 """
 
 import cv2
+import time
 from Raspbot_Lib import Raspbot
 
 # --- Constants ---
