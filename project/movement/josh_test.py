@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-import sys
-sys.path.append(r"C:\Users\Josh\OneDrive - Clemson University\Documents\GitHub\ME6170-Monday-Final-Project\external\Libraries\raspbot")
-from Raspbot_Lib import Raspbot
-"""
-"""
-import sys
-sys.path.append(r"C:\Users\Josh\OneDrive - Clemson University\Documents\GitHub\ME6170-Monday-Final-Project\external\Libraries\lib")
-#导入麦克纳姆小车驱动库 Import Mecanum Car Driver Library
-from McLumk_Wheel_Sports import *
-"""
-
 from ...external.Libraries.lib.McLumk_Wheel_Sports import *
 
 def main():
