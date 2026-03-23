@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
-import smbus
+import smbus2 as smbus
 import time,random
 import math
 
@@ -18,7 +18,7 @@ class Raspbot():
         # Create I2C device.
         self._device = self.get_i2c_device(PI5Car_I2CADDR, 1)
 
-    #写数据
+    #写数据 (Write Data)
     def write_u8(self, reg, data):
         try:
             self._device.write_byte_data(self._addr, reg, data)
@@ -38,7 +38,7 @@ class Raspbot():
         except:
             print ('write_array I2C error')
 
-   #读数据
+   #读数据 (Read Data)
     def read_data_byte(self):
         try:
             buf = self._device.write_byte(self._addr)
@@ -54,7 +54,7 @@ class Raspbot():
             print ('read_u8 I2C error')
 
 
-#控制电机
+#控制电机 (Control Motor)
     def Ctrl_Car(self, motor_id, motor_dir,motor_speed):
         try:
             if(motor_dir !=1)and(motor_dir != 0):  #参数非法,方向默认前进
@@ -70,7 +70,7 @@ class Raspbot():
         except:
             print ('Ctrl_Car I2C error')
 
-#控制电机正反(-255~255)
+#控制电机正反(-255~255) (Control Motor Fwd/Rev)
     def Ctrl_Muto(self, motor_id, motor_speed):
         try:
 
@@ -87,7 +87,7 @@ class Raspbot():
         except:
             print ('Ctrl_Car I2C error')
 
-#控制舵机
+#控制舵机 (Control Servo)
     def Ctrl_Servo(self, id, angle):
         try:
             reg = 0x02
@@ -101,7 +101,7 @@ class Raspbot():
         except:
             print ('Ctrl_Servo I2C error')
 
-#控制灯珠(全部)
+#控制灯珠(全部) (Control All LEDs)
     def Ctrl_WQ2812_ALL(self, state, color):
         try:
             reg = 0x03
@@ -114,7 +114,7 @@ class Raspbot():
         except:
             print ('Ctrl_WQ2812 I2C error')
 
-#单独控制灯珠
+#单独控制灯珠 (Control Individual LEDs)
     def Ctrl_WQ2812_Alone(self, number,state, color):
         try:
             reg = 0x04
@@ -127,7 +127,7 @@ class Raspbot():
         except:
             print ('Ctrl_WQ2812_Alone I2C error')
 
-#控制亮度(全部)
+#控制亮度(全部) (Control Brightness of All)
     def Ctrl_WQ2812_brightness_ALL(self, R, G, B):
         try:
             reg = 0x08
@@ -142,7 +142,7 @@ class Raspbot():
         except:
             print ('Ctrl_WQ2812 I2C error') 
 
-#单独灯珠亮度
+#单独灯珠亮度 (Control Individual Brightness)
     def Ctrl_WQ2812_brightness_Alone(self, number, R, G, B):
         try:
             reg = 0x09
@@ -157,7 +157,7 @@ class Raspbot():
         except:
             print ('Ctrl_WQ2812_Alone I2C error') 
 
-#控制红外遥控器开关
+#控制红外遥控器开关 (Control IR Remote Control Switch)
     def Ctrl_IR_Switch(self, state):
         try:
             reg = 0x05
@@ -183,7 +183,7 @@ class Raspbot():
         except:
             print ('Ctrl_BEEP_Switch I2C error')
 
-#控制超声波测距开关
+#控制超声波测距开关 (Control Ultrasonic Sensor)
     def Ctrl_Ulatist_Switch(self, state):
         try:
             reg = 0x07
@@ -395,7 +395,7 @@ class LightShow:
 # test
 #car = Raspbot()
 
-#读取巡线传感器地址 ,此值只有1位
+#读取巡线传感器地址 ,此值只有1位 (Read the address of the line-following sensor; this value is only 1 bit.)
 # track =car.read_data_array(0x0a,1)
 # track = int(track[0])
 # x1 = (track>>3)&0x01
