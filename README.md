@@ -11,5 +11,6 @@ A Raspbot V2 mobile ground robot has been procured for each laboratory team to s
 
 ## Getting Started
 
-- Add vscode-pdf extension.
-- Clone repository and make sure to pull new commits.
+- In the RaspberryPi terminal, type "goproject." This will open and set up the virtual enviornment to run programs.
+- Any libraries should be downloaded within the venv and not globally.
+- Save any python files to their respective project files (detection, interaction, and/or movement)
