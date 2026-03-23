@@ -11,21 +11,36 @@ from Raspbot_Lib import Raspbot
 # --- Constants ---
 SERVO_PAN  = 1          # Servo 1 controls left/right
 SERVO_TILT = 2          # Servo 2 controls up/down
-PAN_CENTER  = 90        # 0-180 degrees, 90 = straight ahead
-TILT_CENTER = 50        # 0-100 degrees (Raspbot_Lib caps servo 2 at 100)
+PAN_CENTER  = 72        # 0-180 degrees, 90 = straight ahead
+TILT_CENTER = 25        # 0-100 degrees (Raspbot_Lib caps servo 2 at 100)
                         # 50 = roughly level/forward
 
 CAMERA_INDEX  = 0       # USB camera
 FRAME_WIDTH   = 640
 FRAME_HEIGHT  = 480
-TARGET_FPS    = 30
+TARGET_FPS    = 60
 
 
 def center_camera(robot):
-    """Move PTZ camera to forward-facing center position."""
-    robot.Ctrl_Servo(SERVO_PAN,  PAN_CENTER)
+    """
+    Drive to center from consistent directions to eliminate
+    servo hysteresis. 
+    Pan  - always approach from 180 â†’ lands at 72
+    Tilt - always approach from 0   â†’ lands at 25
+    """
+    # Pan: drive high first, then come down to center
+    robot.Ctrl_Servo(SERVO_PAN, 180)
+    time.sleep(0.5)
+    robot.Ctrl_Servo(SERVO_PAN, PAN_CENTER)
+    time.sleep(0.5)
+
+    # Tilt: drive low first, then come up to center
+    robot.Ctrl_Servo(SERVO_TILT, 0)
+    time.sleep(0.5)
     robot.Ctrl_Servo(SERVO_TILT, TILT_CENTER)
-    print(f'Camera centered: pan={PAN_CENTER}°, tilt={TILT_CENTER}°')
+    time.sleep(0.5)
+
+    print(f'Camera centered: pan={PAN_CENTER}, tilt={TILT_CENTER}')
 
 
 def main():
