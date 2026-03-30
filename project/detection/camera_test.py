@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 camera_test.py
-Mouse-controlled PTZ camera stream with red object detection.
+Mouse-controlled PTZ camera stream with black object detection.
 - Click and drag to pan/tilt
 - Scroll wheel to digital zoom
 - Press q to quit
@@ -24,15 +24,15 @@ TILT_MIN, TILT_MAX =   5,  95
 CAMERA_INDEX = 0
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
-TARGET_FPS   = 60    # Request 60fps — actual rate depends on USB bandwidth
+TARGET_FPS   = 60
 
 # --- Black HSV Range ---
 # Black = any hue, any saturation, very low brightness
-# Value threshold is the key — below ~50 is reliably black
+# Value threshold is the key -- below ~50 is reliably black
 BLACK_LOWER = np.array([0,   0,   0])
 BLACK_UPPER = np.array([180, 255, 50])
 
-MIN_CONTOUR_AREA = 800
+MIN_CONTOUR_AREA = 800   # Ignore noise smaller than this (pixels squared)
 
 # --- State ---
 pan        = PAN_CENTER
@@ -63,7 +63,7 @@ def detect_black(frame):
     Detect black objects using HSV color masking.
 
     Why Value (brightness) only?
-    Black has no meaningful hue or saturation — it's simply
+    Black has no meaningful hue or saturation -- it is simply
     the absence of light. So we ignore hue entirely and only
     threshold on the V channel being very low (< 50).
     """
@@ -72,6 +72,8 @@ def detect_black(frame):
     mask = cv2.inRange(hsv, BLACK_LOWER, BLACK_UPPER)
 
     # Morphological cleanup
+    # CLOSE fills small holes inside detected regions
+    # OPEN  removes small noise dots outside regions
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
@@ -85,7 +87,7 @@ def detect_black(frame):
 
         x, y, w, h = cv2.boundingRect(contour)
 
-        # Bounding box — dark gray color
+        # Bounding box -- dark gray color
         cv2.rectangle(frame, (x, y), (x + w, y + h), (50, 50, 50), 2)
 
         # Label background
@@ -94,11 +96,11 @@ def detect_black(frame):
         (lw, lh), _ = cv2.getTextSize(label, font, 0.6, 2)
         cv2.rectangle(frame, (x, y - lh - 8), (x + lw + 4, y), (50, 50, 50), -1)
 
-        # Label text
+        # Label text -- white on dark background
         cv2.putText(frame, label, (x + 2, y - 4),
                     font, 0.6, (255, 255, 255), 2)
 
-        # Center dot — yellow for visibility against black
+        # Center dot -- yellow for visibility against black
         cv2.circle(frame, (x + w // 2, y + h // 2), 4, (0, 255, 255), -1)
 
     return frame
@@ -151,7 +153,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS,          TARGET_FPS)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M','J','P','G'))
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
 
     if not cap.isOpened():
         print('ERROR: Could not open camera.')
@@ -164,15 +166,15 @@ def main():
     cv2.namedWindow('Raspbot Camera Stream')
     cv2.setMouseCallback('Raspbot Camera Stream', mouse_callback)
 
-    # FPS counter variables
+    # FPS counter
     fps_counter = 0
     fps_display = 0
     fps_timer   = time.time()
 
     print('Controls:')
-    print('  Click + drag  → pan/tilt camera')
-    print('  Scroll wheel  → zoom in/out')
-    print('  Q             → quit')
+    print('  Click + drag  -> pan/tilt camera')
+    print('  Scroll wheel  -> zoom in/out')
+    print('  Q             -> quit')
 
     while True:
         ret, frame = cap.read()
@@ -191,8 +193,8 @@ def main():
         # --- Apply zoom ---
         frame = apply_zoom(frame, zoom_level)
 
-        # --- Run color detection ---
-        frame = detect_red(frame)
+        # --- Run black detection ---
+        frame = detect_black(frame)
 
         # --- Calculate actual FPS ---
         fps_counter += 1
@@ -205,8 +207,7 @@ def main():
         # --- HUD ---
         cv2.putText(frame,
                     f'Pan:{pan} Tilt:{tilt} Zoom:{zoom_level:.1f}x FPS:{fps_display}',
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65, (0, 255, 0), 2)
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
         cv2.putText(frame, 'Drag:pan/tilt  Scroll:zoom  Q:quit',
                     (10, FRAME_HEIGHT - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
@@ -224,17 +225,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-```
-
----
-
-## What Was Added
-
-**Red detection pipeline** — each frame goes through this process:
-```
-BGR frame → convert to HSV
-→ mask1 (hue 0-10)  + mask2 (hue 170-180)
-→ combine masks
-→ clean up noise (morphology)
-→ find contours
-→ draw box + label on any contour > 800px²
