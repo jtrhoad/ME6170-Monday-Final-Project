@@ -14,6 +14,7 @@ def main():
 
     while True:
         time.sleep(0.5) # sensor delay
+        key = get_single_keypress()
         # Read distance from sensor
         dist_H =bot.read_data_array(0x1b,1)[0]
         dist_L =bot.read_data_array(0x1a,1)[0]
@@ -25,7 +26,13 @@ def main():
             bot.Ctrl_WQ2812_ALL(1,3)
         else: # If an obstacle is not detected within 30 cm
             bot.Ctrl_WQ2812_ALL(1,1)
+        if key == 'q': # Exit on 'q' key press
+            bot.Ctrl_Ulatist_Switch(0) # disable ultrasonic sensor
+            bot.Ctrl_WQ2812_ALL(0,0) # turn off light
+            break
 
+
+        
 
 
 if __name__ == "__main__":
