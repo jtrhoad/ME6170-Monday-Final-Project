@@ -55,21 +55,7 @@ def main():
     bot.Ctrl_Ulatist_Switch(0) # disable ultrasonic sensor
     bot.Ctrl_WQ2812_ALL(0,0) # turn off light
     del bot # bot object reset
-    
+
 
 if __name__ == "__main__":
     main()
-
-
-finally:
-    try:
-        stop_robot()
-        terminal_print("Motors stopped.")
-    except:
-        pass
-    try:
-        del bot
-        terminal_print("Bot object deleted and reset.")
-    except:
-        pass
-    terminal_print("Done.")
