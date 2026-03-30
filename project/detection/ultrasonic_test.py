@@ -17,14 +17,14 @@ def main():
         # Read distance from sensor
         dist_H =bot.read_data_array(0x1b,1)[0]
         dist_L =bot.read_data_array(0x1a,1)[0]
-        dist = dist_H << 8 | dist_L 
+        dist = (dist_H << 8 | dist_L)/10.0 # Convert to cm
         print(f"Distance: {dist} cm")
         if dist < 15: # If an obstacle is detected within 15 cm
             bot.Ctrl_WQ2812_ALL(1,0)
         elif dist < 30: # If an obstacle is detected within 30 cm
-            bot.Ctrl_WQ2812_ALL(1,1)
-        else: # If an obstacle is not detected within 30 cm
             bot.Ctrl_WQ2812_ALL(1,3)
+        else: # If an obstacle is not detected within 30 cm
+            bot.Ctrl_WQ2812_ALL(1,1)
 
 
 
