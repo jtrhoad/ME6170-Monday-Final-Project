@@ -100,19 +100,19 @@ def main():
         cv2.imshow('Raspbot Camera Stream', frame)
 
         # --- Keyboard controls (5 degrees per keypress) ---
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(1)   # No & 0xFF mask — arrow keys need full value
         if key == ord('q'):
             break
-        elif key == ord('a'):   # pan left
+        elif key == 65361:   # ← Left arrow  = pan left
             new_pan = max(PAN_MIN, pan - 5)
             cv2.setTrackbarPos('Pan  (L <-> R)', 'Camera Controls', new_pan)
-        elif key == ord('d'):   # pan right
+        elif key == 65363:   # → Right arrow = pan right
             new_pan = min(PAN_MAX, pan + 5)
             cv2.setTrackbarPos('Pan  (L <-> R)', 'Camera Controls', new_pan)
-        elif key == ord('w'):   # tilt up
+        elif key == 65362:   # ↑ Up arrow    = tilt up
             new_tilt = min(TILT_MAX, tilt + 5)
             cv2.setTrackbarPos('Tilt (D <-> U)', 'Camera Controls', new_tilt)
-        elif key == ord('s'):   # tilt down
+        elif key == 65364:   # ↓ Down arrow  = tilt down
             new_tilt = max(TILT_MIN, tilt - 5)
             cv2.setTrackbarPos('Tilt (D <-> U)', 'Camera Controls', new_tilt)
 
