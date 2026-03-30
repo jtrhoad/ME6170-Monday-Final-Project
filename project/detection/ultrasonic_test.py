@@ -10,34 +10,23 @@ import threading
 sys.path.append('/home/pi/project_demo/lib')
 from Raspbot_Lib import Raspbot
 
-bot = Raspbot()
 running = True
+bot = Raspbot()
 
-quit_flag = threading.Event()
+def looking_for_q():
+    global running
+    while running:
+        if  sys.stdin.read(1) == 'q':
+            running = False
 
-def watch_for_q():
-    """Runs in a background thread — sets quit_flag when Q is pressed."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        while not quit_flag.is_set():
-            ch = sys.stdin.read(1)
-            if ch.lower() == 'q':
-                quit_flag.set()
-                break
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-key_thread = threading.Thread(target=watch_for_q, daemon=True)
-key_thread.start()
-
-def main():
-    watch_for_q()
-    
+def main():    
+    global running
     bot.Ctrl_Ulatist_Switch(1) # Enable ultrasonic sensor
 
-    while not quit_flag.is_set():
+    thread = threading.Thread(target=looking_for_q, daemon=True)
+    thread.start()
+    
+    while running:
         time.sleep(0.5) # sensor delay
         # Read distance from sensor
         dist_H =bot.read_data_array(0x1b,1)[0]
