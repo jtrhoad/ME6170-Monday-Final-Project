@@ -1,0 +1,119 @@
+import RPi.GPIO as GPIO
+import time # importing time functions like 'sleep'
+
+# -----------------------------
+# GPIO SETUP
+# -----------------------------
+GPIO.setmode(GPIO.BCM)
+
+GRIPPER_PIN = 17   # Change if needed
+WRIST_PIN = 18     # Change if needed
+
+GPIO.setup(GRIPPER_PIN, GPIO.OUT) 
+GPIO.setup(WRIST_PIN, GPIO.OUT) # sets both pins as outputs
+
+gripper = GPIO.PWM(GRIPPER_PIN, 50)
+wrist = GPIO.PWM(WRIST_PIN, 50)
+
+gripper.start(0)
+wrist.start(0)
+
+# -----------------------------
+# SERVO FUNCTIONS
+# -----------------------------
+def set_angle(pwm, angle):        # converts angle to PWM duty cycle
+    duty = 2 + (angle / 18)
+    pwm.ChangeDutyCycle(duty)        # sends signal to servo
+    time.sleep(0.3)
+    pwm.ChangeDutyCycle(0)          # stops sending signal (prevents jitter)
+
+def open_gripper():
+    print("Opening gripper")
+    set_angle(gripper, 90)   # Adjust after testing
+
+def close_gripper():
+    print("Closing gripper")
+    set_angle(gripper, 30)   # Adjust for grip strength
+
+def wrist_down():
+    print("Lowering wrist")
+    set_angle(wrist, 120)
+
+def wrist_up():
+    print("Lifting wrist")
+    set_angle(wrist, 60)
+
+# -----------------------------
+# MOVEMENT FUNCTIONS (PLACEHOLDERS)
+# Replace with Movement Team code
+# -----------------------------
+def move_forward(duration):
+    print("Moving forward")
+    time.sleep(duration)
+
+def move_backward(duration):
+    print("Moving backward")
+    time.sleep(duration)
+
+def turn_around():
+    print("Turning 180 degrees")
+    time.sleep(1.5)
+
+# -----------------------------
+# MAIN INTERACTION SEQUENCE
+# -----------------------------
+def interaction_sequence():
+    print("\n--- Starting Interaction Sequence ---")
+
+    # 1. Move away slightly
+    move_backward(1)
+
+    # 2. Turn around 180°
+    turn_around()              # turns around for a set time, NOT set angle 
+
+    # 3. Position at correct distance
+    move_forward(0.5)
+
+    # 4. Open gripper
+    open_gripper()
+
+    # 5. Move closer to object
+    move_forward(0.5)
+
+    # 6. Close gripper
+    close_gripper()
+
+    # 7. Lift object
+    wrist_up()
+
+    # 8. Turn back around
+    turn_around()
+
+    print("--- Sequence Complete ---\n")
+
+# -----------------------------
+# MAIN LOOP
+# -----------------------------
+try:
+    object_found = False  # This will come from Detection Team
+
+    while True:
+        # Simulating detection trigger (REMOVE later)
+        object_found = True
+
+        if object_found:
+            interaction_sequence()
+            break
+
+        time.sleep(0.1)
+
+# -----------------------------
+# CLEANUP
+# -----------------------------
+except KeyboardInterrupt:
+    print("Stopping program")
+
+finally:
+    gripper.stop()
+    wrist.stop()
+    GPIO.cleanup()
