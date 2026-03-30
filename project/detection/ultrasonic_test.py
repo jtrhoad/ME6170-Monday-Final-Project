@@ -3,6 +3,8 @@
 
 import sys
 import time
+import tty
+import termios
 import threading
 
 sys.path.append('/home/pi/project_demo/lib')
@@ -11,21 +13,31 @@ from Raspbot_Lib import Raspbot
 bot = Raspbot()
 running = True
 
-def listen_for_quit():
-    global running
-    while True:
-        if input() == 'q':
-            running = False
-            break
+quit_flag = threading.Event()
+
+def watch_for_q():
+    """Runs in a background thread — sets quit_flag when Q is pressed."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        while not quit_flag.is_set():
+            ch = sys.stdin.read(1)
+            if ch.lower() == 'q':
+                quit_flag.set()
+                break
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+key_thread = threading.Thread(target=watch_for_q, daemon=True)
+key_thread.start()
 
 def main():
-    global running
+    watch_for_q()
+    
     bot.Ctrl_Ulatist_Switch(1) # Enable ultrasonic sensor
 
-    thread=threading.Thread(target=listen_for_quit)
-    thread.start()
-
-    while True:
+    while not quit_flag.is_set():
         time.sleep(0.5) # sensor delay
         # Read distance from sensor
         dist_H =bot.read_data_array(0x1b,1)[0]
@@ -40,10 +52,24 @@ def main():
         else: # If an obstacle is not detected within 30 cm
             bot.Ctrl_WQ2812_ALL(1,1)
         
-        bot.Ctrl_Ulatist_Switch(0) # disable ultrasonic sensor
-        bot.Ctrl_WQ2812_ALL(0,0) # turn off light
-        break
+    bot.Ctrl_Ulatist_Switch(0) # disable ultrasonic sensor
+    bot.Ctrl_WQ2812_ALL(0,0) # turn off light
+    del bot # bot object reset
+    
 
 if __name__ == "__main__":
     main()
 
+
+finally:
+    try:
+        stop_robot()
+        terminal_print("Motors stopped.")
+    except:
+        pass
+    try:
+        del bot
+        terminal_print("Bot object deleted and reset.")
+    except:
+        pass
+    terminal_print("Done.")
