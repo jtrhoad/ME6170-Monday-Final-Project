@@ -6,31 +6,36 @@ import tty
 import termios
 import threading
 
-print("=== IR Sensor Test ===")
-print("Starting up...")
+def terminal_print(msg):
+    """Print with proper carriage return for raw terminal mode."""
+    sys.stdout.write(msg + "\r\n")
+    sys.stdout.flush()
+
+terminal_print("=== IR Sensor Test ===")
+terminal_print("Starting up...")
 
 try:
     sys.path.append('/home/pi/project_demo/lib')
     from McLumk_Wheel_Sports import *
-    print("Library loaded OK")
+    terminal_print("Library loaded OK")
 except Exception as e:
-    print(f"ERROR loading library: {e}")
+    terminal_print(f"ERROR loading library: {e}")
     sys.exit(1)
 
 try:
     _ = bot
-    print("Bot connected OK")
+    terminal_print("Bot connected OK")
 except Exception as e:
-    print(f"ERROR connecting to bot: {e}")
+    terminal_print(f"ERROR connecting to bot: {e}")
     sys.exit(1)
 
-print()
-print("Reading sensors every 0.2 seconds...")
-print("Move the bot over your tape and watch the values change.")
-print("Press Ctrl+C or Q to stop and reset.")
-print()
-print("L1(far left)  L2(inner left)  R1(inner right)  R2(far right)  RAW")
-print("-" * 65)
+terminal_print("")
+terminal_print("Reading sensors every 0.2 seconds...")
+terminal_print("Move the bot over your tape and watch the values change.")
+terminal_print("Press Ctrl+C or Q to stop and reset.")
+terminal_print("")
+terminal_print("L1(far left)  L2(inner left)  R1(inner right)  R2(far right)  RAW")
+terminal_print("-" * 65)
 
 # ── Keypress detection (non-blocking) ─────────────────────────────────────────
 quit_flag = threading.Event()
@@ -44,7 +49,7 @@ def watch_for_q():
         while not quit_flag.is_set():
             ch = sys.stdin.read(1)
             if ch.lower() == 'q':
-                print("\nQ pressed — resetting bot...")
+                terminal_print("\r\nQ pressed — resetting bot...")
                 quit_flag.set()
                 break
     finally:
@@ -70,26 +75,26 @@ try:
             bar += "[##]" if R1 == 0 else "[  ]"
             bar += "[##]" if R2 == 0 else "[  ]"
 
-            print(f"L1={L1}  L2={L2}  R1={R1}  R2={R2}  raw={track:08b} ({track})  {bar}")
+            terminal_print(f"L1={L1}  L2={L2}  R1={R1}  R2={R2}  raw={track:08b} ({track})  {bar}")
 
         except Exception as e:
-            print(f"ERROR reading sensor: {e}")
+            terminal_print(f"ERROR reading sensor: {e}")
 
         time.sleep(0.2)
 
 except KeyboardInterrupt:
-    print("\nCtrl+C pressed — resetting bot...")
+    terminal_print("\r\nCtrl+C pressed — resetting bot...")
     quit_flag.set()
 
 finally:
     try:
         stop_robot()
-        print("Motors stopped.")
+        terminal_print("Motors stopped.")
     except:
         pass
     try:
         del bot
-        print("Bot object deleted and reset.")
+        terminal_print("Bot object deleted and reset.")
     except:
         pass
-    print("Done.")
+    terminal_print("Done.")
