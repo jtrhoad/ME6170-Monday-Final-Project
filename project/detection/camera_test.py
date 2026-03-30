@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 camera_test.py
-Mouse-controlled PTZ camera stream.
+Mouse-controlled PTZ camera stream with red object detection.
 - Click and drag to pan/tilt
 - Scroll wheel to digital zoom
 - Press q to quit
@@ -12,18 +12,27 @@ import time
 import numpy as np
 from Raspbot_Lib import Raspbot
 
-# --- Constants ---
+# --- Servo Constants ---
 SERVO_PAN   = 1
 SERVO_TILT  = 2
 PAN_CENTER  = 72
 TILT_CENTER = 25
-PAN_MIN,  PAN_MAX  = 0,   180
-TILT_MIN, TILT_MAX = 0,   100
+PAN_MIN,  PAN_MAX  =   5, 175
+TILT_MIN, TILT_MAX =   5,  95
 
+# --- Camera Constants ---
 CAMERA_INDEX = 0
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
-TARGET_FPS   = 30
+TARGET_FPS   = 60    # Request 60fps — actual rate depends on USB bandwidth
+
+# --- Black HSV Range ---
+# Black = any hue, any saturation, very low brightness
+# Value threshold is the key — below ~50 is reliably black
+BLACK_LOWER = np.array([0,   0,   0])
+BLACK_UPPER = np.array([180, 255, 50])
+
+MIN_CONTOUR_AREA = 800
 
 # --- State ---
 pan        = PAN_CENTER
@@ -32,7 +41,7 @@ last_pan   = PAN_CENTER
 last_tilt  = TILT_CENTER
 dragging   = False
 drag_start = (0, 0)
-zoom_level = 1.0   # 1.0 = no zoom, 2.0 = 2x digital zoom
+zoom_level = 1.0
 robot      = None
 
 
@@ -49,41 +58,73 @@ def center_camera(bot):
     print(f'Camera centered: pan={PAN_CENTER}, tilt={TILT_CENTER}')
 
 
+def detect_black(frame):
+    """
+    Detect black objects using HSV color masking.
+
+    Why Value (brightness) only?
+    Black has no meaningful hue or saturation — it's simply
+    the absence of light. So we ignore hue entirely and only
+    threshold on the V channel being very low (< 50).
+    """
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    mask = cv2.inRange(hsv, BLACK_LOWER, BLACK_UPPER)
+
+    # Morphological cleanup
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
+
+    for contour in contours:
+        if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
+            continue
+
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # Bounding box — dark gray color
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (50, 50, 50), 2)
+
+        # Label background
+        label = 'Black Object'
+        font  = cv2.FONT_HERSHEY_SIMPLEX
+        (lw, lh), _ = cv2.getTextSize(label, font, 0.6, 2)
+        cv2.rectangle(frame, (x, y - lh - 8), (x + lw + 4, y), (50, 50, 50), -1)
+
+        # Label text
+        cv2.putText(frame, label, (x + 2, y - 4),
+                    font, 0.6, (255, 255, 255), 2)
+
+        # Center dot — yellow for visibility against black
+        cv2.circle(frame, (x + w // 2, y + h // 2), 4, (0, 255, 255), -1)
+
+    return frame
+
+
 def mouse_callback(event, x, y, flags, param):
-    """
-    Left click + drag  → pan and tilt the camera
-    Scroll wheel up    → zoom in
-    Scroll wheel down  → zoom out
-    """
     global pan, tilt, dragging, drag_start, zoom_level
 
-    # --- Left button pressed: start drag ---
     if event == cv2.EVENT_LBUTTONDOWN:
         dragging = True
         drag_start = (x, y)
 
-    # --- Mouse moving while held: calculate pan/tilt delta ---
     elif event == cv2.EVENT_MOUSEMOVE and dragging:
-        dx = x - drag_start[0]   # horizontal movement → pan
-        dy = y - drag_start[1]   # vertical movement   → tilt
-
-        # Scale drag pixels to servo degrees
-        # Dividing by 8 gives a comfortable sensitivity
+        dx = x - drag_start[0]
+        dy = y - drag_start[1]
         pan  = int(np.clip(pan  + dx / 8, PAN_MIN,  PAN_MAX))
         tilt = int(np.clip(tilt + dy / 8, TILT_MIN, TILT_MAX))
-
-        # Reset drag start so movement is incremental not absolute
         drag_start = (x, y)
 
-    # --- Left button released: stop drag ---
     elif event == cv2.EVENT_LBUTTONUP:
         dragging = False
 
-    # --- Scroll wheel: digital zoom ---
     elif event == cv2.EVENT_MOUSEWHEEL:
-        if flags > 0:   # scroll up = zoom in
+        if flags > 0:
             zoom_level = min(3.0, zoom_level + 0.1)
-        else:           # scroll down = zoom out
+        else:
             zoom_level = max(1.0, zoom_level - 0.1)
 
 
@@ -92,12 +133,11 @@ def apply_zoom(frame, zoom):
     if zoom == 1.0:
         return frame
     h, w = frame.shape[:2]
-    # Calculate crop box centered on frame
     new_h = int(h / zoom)
     new_w = int(w / zoom)
     y1 = (h - new_h) // 2
     x1 = (w - new_w) // 2
-    cropped = frame[y1:y1+new_h, x1:x1+new_w]
+    cropped = frame[y1:y1 + new_h, x1:x1 + new_w]
     return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
@@ -118,8 +158,16 @@ def main():
         del robot
         return
 
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+    print(f'Camera opened at {FRAME_WIDTH}x{FRAME_HEIGHT} @ {actual_fps}fps')
+
     cv2.namedWindow('Raspbot Camera Stream')
     cv2.setMouseCallback('Raspbot Camera Stream', mouse_callback)
+
+    # FPS counter variables
+    fps_counter = 0
+    fps_display = 0
+    fps_timer   = time.time()
 
     print('Controls:')
     print('  Click + drag  → pan/tilt camera')
@@ -132,7 +180,7 @@ def main():
             print('WARNING: Failed to grab frame.')
             break
 
-        # --- Send servo commands only when values change ---
+        # --- Servo updates ---
         if pan != last_pan:
             robot.Ctrl_Servo(SERVO_PAN, pan)
             last_pan = pan
@@ -140,16 +188,28 @@ def main():
             robot.Ctrl_Servo(SERVO_TILT, tilt)
             last_tilt = tilt
 
-        # --- Apply digital zoom ---
+        # --- Apply zoom ---
         frame = apply_zoom(frame, zoom_level)
 
-        # --- HUD overlay ---
-        cv2.putText(frame, f'Pan: {pan}  Tilt: {tilt}  Zoom: {zoom_level:.1f}x',
+        # --- Run color detection ---
+        frame = detect_red(frame)
+
+        # --- Calculate actual FPS ---
+        fps_counter += 1
+        elapsed = time.time() - fps_timer
+        if elapsed >= 1.0:
+            fps_display = fps_counter
+            fps_counter = 0
+            fps_timer   = time.time()
+
+        # --- HUD ---
+        cv2.putText(frame,
+                    f'Pan:{pan} Tilt:{tilt} Zoom:{zoom_level:.1f}x FPS:{fps_display}',
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7, (0, 255, 0), 2)
-        cv2.putText(frame, 'Drag to pan/tilt | Scroll to zoom | Q to quit',
-                    (10, FRAME_HEIGHT - 15), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (200, 200, 200), 1)
+                    0.65, (0, 255, 0), 2)
+        cv2.putText(frame, 'Drag:pan/tilt  Scroll:zoom  Q:quit',
+                    (10, FRAME_HEIGHT - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
         cv2.imshow('Raspbot Camera Stream', frame)
 
@@ -164,3 +224,17 @@ def main():
 
 if __name__ == '__main__':
     main()
+```
+
+---
+
+## What Was Added
+
+**Red detection pipeline** — each frame goes through this process:
+```
+BGR frame → convert to HSV
+→ mask1 (hue 0-10)  + mask2 (hue 170-180)
+→ combine masks
+→ clean up noise (morphology)
+→ find contours
+→ draw box + label on any contour > 800px²
