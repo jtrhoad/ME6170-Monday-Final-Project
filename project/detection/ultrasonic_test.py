@@ -11,7 +11,6 @@ sys.path.append('/home/pi/project_demo/lib')
 from Raspbot_Lib import Raspbot
 
 bot = Raspbot()
-running = True
 
 quit_flag = threading.Event()
 
@@ -26,15 +25,11 @@ def watch_for_q():
             if ch.lower() == 'q':
                 quit_flag.set()
                 break
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 key_thread = threading.Thread(target=watch_for_q, daemon=True)
 key_thread.start()
 
-def main():
-    watch_for_q()
-    
+def main():    
     bot.Ctrl_Ulatist_Switch(1) # Enable ultrasonic sensor
 
     while not quit_flag.is_set():
