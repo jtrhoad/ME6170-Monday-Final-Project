@@ -3,8 +3,6 @@
 
 import sys
 import time
-import tty
-import termios
 import threading
 
 sys.path.append('/home/pi/project_demo/lib')
@@ -25,7 +23,7 @@ def main():
 
     thread = threading.Thread(target=looking_for_q, daemon=True)
     thread.start()
-    
+
     while running:
         time.sleep(0.5) # sensor delay
         # Read distance from sensor
