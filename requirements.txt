@@ -1,0 +1,20 @@
+# requirements.txt
+# ME4170 - Raspbot V2 Color Tracking (Local Desktop Development)
+#
+# These are the desktop-safe equivalents of what runs on the Pi.
+# RPi-specific libs (RPi.GPIO, smbus2) are intentionally EXCLUDED
+# since your desktop has no GPIO pins or I2C bus.
+# On the actual Raspbot, those are pre-installed in the Yahboom image.
+
+# Core computer vision — same library used on the Pi
+opencv-python>=4.8.0
+
+# Numerical computing — underpins all image array operations
+numpy>=1.24.0
+
+# MediaPipe — Google's ML pipeline for hand/face/pose tracking
+# Same version target as the Pi build (arm64 build handled separately there)
+mediapipe>=0.10.0
+
+# Utility: cleaner in-terminal output (optional but helpful)
+tqdm>=4.65.0
