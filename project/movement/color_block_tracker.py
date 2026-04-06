@@ -98,9 +98,9 @@ SEARCH_ROTATE_STEP  = 0.3        # seconds per rotate step before rechecking
 SEARCH_MAX_STEPS    = 24         # 24 steps * 0.3s ~ 360 degrees
 
 # --- Dead Reckoning (calibrate on actual surface) ---
-DEG_PER_SECOND_ROTATE = 50.0
-CM_PER_SECOND_FORWARD = 20.0
-CM_PER_SECOND_STRAFE  = 18.0
+DEG_PER_SECOND_ROTATE = 101.0
+CM_PER_SECOND_FORWARD = 35.25
+CM_PER_SECOND_STRAFE  = 28.90
 
 # ===========================================================================
 # COLOR REGISTRY
@@ -514,9 +514,10 @@ class ColorBlockTracker:
             return
 
         if self._elapsed() >= SEARCH_ROTATE_STEP:
-            # In-place clockwise: left wheels forward, right wheels backward
-            self._drive( SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED,
-                         SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
+            # In-place clockwise: left side (motors 0,1) forward, right side (motors 2,3) backward
+            # Confirmed vs dr_calibration.py: Muto(0,+S), Muto(1,+S), Muto(2,-S), Muto(3,-S)
+            self._drive( SEARCH_ROTATE_SPEED,  SEARCH_ROTATE_SPEED,
+                        -SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
             self.dr.rotate(+1, SEARCH_ROTATE_STEP)
             self.search_steps    += 1
             self.last_action_time = time.time()
@@ -663,9 +664,10 @@ class ColorBlockTracker:
         if abs(bearing) > 10:
             direction   = +1 if bearing > 0 else -1
             rotate_time = min(abs(bearing) / DEG_PER_SECOND_ROTATE, 0.5)
+            # Rotate: left side forward/back, right side opposite -- confirmed vs dr_calibration
             self._drive(
-                 SEARCH_ROTATE_SPEED * direction, -SEARCH_ROTATE_SPEED * direction,
-                 SEARCH_ROTATE_SPEED * direction, -SEARCH_ROTATE_SPEED * direction)
+                 SEARCH_ROTATE_SPEED * direction,  SEARCH_ROTATE_SPEED * direction,
+                -SEARCH_ROTATE_SPEED * direction, -SEARCH_ROTATE_SPEED * direction)
             time.sleep(rotate_time)
             self.dr.rotate(direction, rotate_time)
             self._stop()
