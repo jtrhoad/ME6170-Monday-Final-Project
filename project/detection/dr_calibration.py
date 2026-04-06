@@ -28,7 +28,7 @@ import time
 import math
 import sys
 from Raspbot_Lib import Raspbot
-from McLumk_Wheel_Sports import McLumk_Wheel_Sports
+from McLumk_Wheel_Sports import *
 
 # ===========================================================================
 # TEST PARAMETERS -- match these to the values in green_block_tracker.py
