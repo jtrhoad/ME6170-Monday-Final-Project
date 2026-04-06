@@ -4,7 +4,7 @@ from Raspbot_Lib import Raspbot
 import time,math
 
 # 初始化机器人对象
-robot = Raspbot()
+bot = Raspbot()
 """
  q w e
 a--丨--d
