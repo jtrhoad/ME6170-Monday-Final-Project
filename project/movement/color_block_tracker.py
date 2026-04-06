@@ -49,7 +49,7 @@ from Raspbot_Lib import Raspbot
 CAMERA_INDEX = 0
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
-TARGET_FPS   = 30
+TARGET_FPS   = 60
 
 # --- Servo ---
 SERVO_PAN         = 1
@@ -58,8 +58,18 @@ PAN_CENTER        = 72
 TILT_CENTER       = 25
 PAN_MIN,  PAN_MAX  =  5, 175    # Hard angle limits -- never exceeded
 TILT_MIN, TILT_MAX =  5,  95
-SERVO_DEADBAND    = 15           # px -- ignore offsets smaller than this
-SERVO_P_GAIN      = 0.05         # degrees per pixel of offset
+
+# Proportional gain: degrees of servo movement per pixel of error.
+# Lower = smoother but slower. Higher = faster but more jitter.
+PAN_GAIN     = 0.03
+TILT_GAIN    = 0.03
+
+# Max servo movement per frame -- prevents lurching on large sudden errors.
+MAX_STEP_DEG = 2.0
+
+# Ignore offsets smaller than this -- stops jitter when nearly centered.
+# Also used by _is_centered() to decide when to transition to CONFIRMING.
+DEADBAND_PX  = 20
 
 # --- Detection ---
 MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
@@ -225,6 +235,21 @@ def run_color_selection(cap):
 # ===========================================================================
 # DETECTION
 # ===========================================================================
+
+def compute_servo_step(error_px, gain, max_step):
+    """
+    Convert a pixel error into a servo degree step.
+
+    1. Scale by gain (error -> degrees).
+    2. Cap at max_step so large errors don't cause sudden lurches.
+    3. Preserve sign so direction is correct.
+
+    Example: error=80px, gain=0.03, max_step=2.0
+      raw = 80 * 0.03 = 2.4 -> clamped to 2.0 degrees
+    """
+    raw = error_px * gain
+    return float(np.clip(raw, -max_step, max_step))
+
 
 def find_color_block(frame, color_key, blacklist):
     """
@@ -407,24 +432,25 @@ class ColorBlockTracker:
 
     def _update_servos(self, target):
         """
-        Proportional servo controller.
-        Correction = gain * pixel_offset, applied only outside the deadband.
-        As the servo approaches center the offset shrinks, so corrections
-        naturally slow down -- no overshoot without needing a D term.
+        Proportional servo controller with max-step clamping.
+        Correction = gain * pixel_offset, capped at MAX_STEP_DEG per frame.
+        Sign is SUBTRACTED because this servo's positive direction is
+        physically opposite to the pixel coordinate direction.
+        As the offset shrinks the correction naturally slows -- no D term needed.
         """
-        if abs(target['offset_x']) > SERVO_DEADBAND:
-            delta    = int(target['offset_x'] * SERVO_P_GAIN)
-            self.pan = int(np.clip(self.pan + delta, PAN_MIN, PAN_MAX))
+        if abs(target['offset_x']) > DEADBAND_PX:
+            step     = compute_servo_step(target['offset_x'], PAN_GAIN, MAX_STEP_DEG)
+            self.pan = int(np.clip(self.pan - step, PAN_MIN, PAN_MAX))
             self.robot.Ctrl_Servo(SERVO_PAN, self.pan)
 
-        if abs(target['offset_y']) > SERVO_DEADBAND:
-            delta     = int(target['offset_y'] * SERVO_P_GAIN)
-            self.tilt = int(np.clip(self.tilt + delta, TILT_MIN, TILT_MAX))
+        if abs(target['offset_y']) > DEADBAND_PX:
+            step      = compute_servo_step(target['offset_y'], TILT_GAIN, MAX_STEP_DEG)
+            self.tilt = int(np.clip(self.tilt - step, TILT_MIN, TILT_MAX))
             self.robot.Ctrl_Servo(SERVO_TILT, self.tilt)
 
     def _is_centered(self, target):
-        return (abs(target['offset_x']) <= SERVO_DEADBAND and
-                abs(target['offset_y']) <= SERVO_DEADBAND)
+        return (abs(target['offset_x']) <= DEADBAND_PX and
+                abs(target['offset_y']) <= DEADBAND_PX)
 
     def _prune_blacklist(self):
         """Remove expired blacklist entries at the start of each frame."""
