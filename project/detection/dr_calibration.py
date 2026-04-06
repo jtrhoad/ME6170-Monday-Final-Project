@@ -92,11 +92,16 @@ def test_rotation(robot):
 
     try:
         # Mecanum in-place clockwise: left wheels forward, right wheels backward
-        robot.Ctrl_Car( SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED,
-                        SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(0, SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(1, -SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(2, SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(3, -SEARCH_ROTATE_SPEED)
         time.sleep(TEST_DURATION)
     finally:
-        robot.Car_Stop()
+        robot.Ctrl_Car(0, 0, 0)
+        robot.Ctrl_Car(1, 0, 0)
+        robot.Ctrl_Car(2, 0, 0)
+        robot.Ctrl_Car(3, 0, 0)
 
     print(f'\nBot stopped. Measure the angle rotated.')
     while True:
@@ -181,11 +186,16 @@ def test_strafe(robot):
         # Mecanum strafe right:
         #   FL: backward  FR: forward
         #   RL: forward   RR: backward
-        robot.Ctrl_Car(-AVOID_SIDE_SPEED,  AVOID_SIDE_SPEED,
-                        AVOID_SIDE_SPEED, -AVOID_SIDE_SPEED)
+        robot.Ctrl_Muto(0, -AVOID_SIDE_SPEED)
+        robot.Ctrl_Muto(1, AVOID_SIDE_SPEED)
+        robot.Ctrl_Muto(2, AVOID_SIDE_SPEED)
+        robot.Ctrl_Muto(3, -AVOID_SIDE_SPEED)
         time.sleep(TEST_DURATION)
     finally:
-        robot.Car_Stop()
+        robot.Ctrl_Car(0, 0, 0)
+        robot.Ctrl_Car(1, 0, 0)
+        robot.Ctrl_Car(2, 0, 0)
+        robot.Ctrl_Car(3, 0, 0)
 
     print(f'\nBot stopped. Measure the lateral distance traveled.')
     while True:
