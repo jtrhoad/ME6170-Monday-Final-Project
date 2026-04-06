@@ -130,11 +130,16 @@ def test_forward(robot):
     countdown(3, 'Forward movement test starting...')
 
     try:
-        robot.Ctrl_Car(APPROACH_SPEED, APPROACH_SPEED, APPROACH_SPEED)
+        robot.Ctrl_Car(1, 1, APPROACH_SPEED)
+        robot.Ctrl_Car(2, 1, APPROACH_SPEED)
+        robot.Ctrl_Car(3, 1, APPROACH_SPEED)
+        robot.Ctrl_Car(4, 1, APPROACH_SPEED)
         time.sleep(TEST_DURATION)
     finally:
-        robot.Car_Stop()
-
+        robot.Ctrl_Car(1, 1, 0)
+        robot.Ctrl_Car(2, 1, 0)
+        robot.Ctrl_Car(3, 1, 0)
+        robot.Ctrl_Car(4, 1, 0)
     print(f'\nBot stopped. Measure the distance traveled.')
     while True:
         try:
