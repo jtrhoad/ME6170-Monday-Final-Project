@@ -277,8 +277,8 @@ def main():
                 obj_cx, obj_cy, _ = targets[0]
 
                 # Pixel error = how far the object is from frame center
-                # Positive x_err -> object is RIGHT of center -> pan right (increase)
-                # Positive y_err -> object is BELOW center  -> tilt down (increase)
+                # Positive x_err -> object is RIGHT of center -> decrease pan to follow
+                # Positive y_err -> object is BELOW center  -> decrease tilt to follow
                 x_err = obj_cx - FRAME_CX
                 y_err = obj_cy - FRAME_CY
 
@@ -302,11 +302,11 @@ def main():
                 # then clamp it to MAX_STEP_DEG so we never lurch.
 
                 if abs(x_err) > DEADBAND_PX:
-                    pan = clamp(pan + compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
+                    pan = clamp(pan - compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
                                 PAN_MIN, PAN_MAX)
 
                 if abs(y_err) > DEADBAND_PX:
-                    tilt = clamp(tilt + compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
+                    tilt = clamp(tilt - compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
                                  TILT_MIN, TILT_MAX)
 
         # ------------------------------------------------------------------
