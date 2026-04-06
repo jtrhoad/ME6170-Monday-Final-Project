@@ -69,7 +69,7 @@ MAX_STEP_DEG = 2.0
 
 # Ignore offsets smaller than this -- stops jitter when nearly centered.
 # Also used by _is_centered() to decide when to transition to CONFIRMING.
-DEADBAND_PX  = 20
+DEADBAND_PX  = 5
 
 # --- Detection ---
 MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
