@@ -47,15 +47,17 @@ TILT_MIN, TILT_MAX =   5,  95
 # ---------------------------------------------------------------------------
 # How many degrees to move per pixel of error.
 # Lower = smoother but slower to acquire. Higher = faster but more jitter.
-PAN_GAIN  = 0.04   # degrees per pixel (horizontal)
-TILT_GAIN = 0.04   # degrees per pixel (vertical)
+PAN_GAIN  = 0.02   # degrees per pixel (horizontal)
+TILT_GAIN = 0.02   # degrees per pixel (vertical)
 
 # Maximum servo movement per frame -- prevents lurching on large sudden errors.
-MAX_STEP_DEG = 3.0
+# Smaller = finer steps = less overshoot past center.
+MAX_STEP_DEG = 1.5
 
 # If the object center is within this many pixels of frame center, don't move.
-# This is the deadband -- eliminates constant micro-corrections when centered.
-DEADBAND_PX = 25
+# Wide enough to absorb residual overshoot so the servo can settle
+# instead of ping-ponging back and forth.
+DEADBAND_PX = 40
 
 # ---------------------------------------------------------------------------
 # Camera Constants
@@ -65,7 +67,7 @@ FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
 FRAME_CX     = FRAME_WIDTH  // 2   # 320 -- horizontal center
 FRAME_CY     = FRAME_HEIGHT // 2   # 240 -- vertical center
-TARGET_FPS   = 30
+TARGET_FPS   = 60
 
 # ---------------------------------------------------------------------------
 # Detection Constants
@@ -277,8 +279,8 @@ def main():
                 obj_cx, obj_cy, _ = targets[0]
 
                 # Pixel error = how far the object is from frame center
-                # Positive x_err -> object is RIGHT of center -> decrease pan to follow
-                # Positive y_err -> object is BELOW center  -> decrease tilt to follow
+                # Positive x_err -> object is RIGHT of center -> pan right (increase)
+                # Positive y_err -> object is BELOW center  -> tilt down (increase)
                 x_err = obj_cx - FRAME_CX
                 y_err = obj_cy - FRAME_CY
 
@@ -302,11 +304,11 @@ def main():
                 # then clamp it to MAX_STEP_DEG so we never lurch.
 
                 if abs(x_err) > DEADBAND_PX:
-                    pan = clamp(pan - compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
+                    pan = clamp(pan + compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
                                 PAN_MIN, PAN_MAX)
 
                 if abs(y_err) > DEADBAND_PX:
-                    tilt = clamp(tilt - compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
+                    tilt = clamp(tilt + compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
                                  TILT_MIN, TILT_MAX)
 
         # ------------------------------------------------------------------
