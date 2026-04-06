@@ -28,7 +28,6 @@ import time
 import math
 import sys
 from Raspbot_Lib import Raspbot
-import McLumk_Wheel_Sports
 
 # ===========================================================================
 # TEST PARAMETERS -- match these to the values in green_block_tracker.py
@@ -132,10 +131,16 @@ def test_forward(robot):
     countdown(3, 'Forward movement test starting...')
 
     try:
-        robot.move_forward(APPROACH_SPEED)
+        robot.Ctrl_Muto(0, APPROACH_SPEED)
+        robot.Ctrl_Muto(1, APPROACH_SPEED)
+        robot.Ctrl_Muto(2, APPROACH_SPEED)
+        robot.Ctrl_Muto(3, APPROACH_SPEED)
         time.sleep(TEST_DURATION)
     finally:
-        robot.stop_robot()
+        robot.Ctrl_Car(0, 0, 0)
+        robot.Ctrl_Car(1, 0, 0)
+        robot.Ctrl_Car(2, 0, 0)
+        robot.Ctrl_Car(3, 0, 0)
     print(f'\nBot stopped. Measure the distance traveled.')
     while True:
         try:
