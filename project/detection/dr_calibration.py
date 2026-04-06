@@ -134,7 +134,7 @@ def test_forward(robot):
 
     wait_for_enter('Position the bot on a clear straight path and press ENTER...')
     countdown(3, 'Forward movement test starting...')
-    APPROACH_SPEED_R = APPROACH_SPEED * 1.1  # Compensate for veering right
+    APPROACH_SPEED_R = 60  # Compensate for veering right
 
     try:
         robot.Ctrl_Muto(2, APPROACH_SPEED_R) ## Right Front
