@@ -413,6 +413,7 @@ class ColorBlockTracker:
         # Contours near a live entry are skipped in find_color_block()
         self.blacklist = []
 
+        self.robot.Ctrl_Ulatist_Switch(1)   # Power on ultrasonic sensor
         self._center_camera()
 
     def _center_camera(self):
@@ -439,6 +440,22 @@ class ColorBlockTracker:
         for i in range(4):
             self.robot.Ctrl_Muto(i, 0)
 
+    def _read_sonar(self):
+        """
+        Read ultrasonic distance in cm.
+        The sensor stores the result across two I2C registers:
+          0x1b = high byte,  0x1a = low byte
+        Combined: (high << 8 | low) / 10.0 gives distance in cm.
+        Returns 999.0 on read failure so the bot treats the path as clear.
+        """
+        try:
+            dist_H = self.robot.read_data_array(0x1b, 1)[0]
+            dist_L = self.robot.read_data_array(0x1a, 1)[0]
+            return (dist_H << 8 | dist_L) / 10.0
+        except Exception as e:
+            print(f'[SONAR] Read error: {e}')
+            return 999.0
+
     def _set_state(self, new_state):
         if new_state != self.state:
             print(f'[STATE] {self.state} -> {new_state}')
@@ -450,25 +467,26 @@ class ColorBlockTracker:
 
     def _update_servos(self, target):
         """
-        Proportional servo controller with max-step clamping.
-        Correction = gain * pixel_offset, capped at MAX_STEP_DEG per frame.
-        Sign is SUBTRACTED because this servo's positive direction is
-        physically opposite to the pixel coordinate direction.
-        As the offset shrinks the correction naturally slows -- no D term needed.
-        """
-        if abs(target['offset_x']) > DEADBAND_PX:
-            step     = compute_servo_step(target['offset_x'], PAN_GAIN, MAX_STEP_DEG)
-            self.pan = int(np.clip(self.pan - step, PAN_MIN, PAN_MAX))
-            self.robot.Ctrl_Servo(SERVO_PAN, self.pan)
+        Tilt-only servo controller -- pan is locked at center.
 
+        WHY LOCK PAN?
+          If pan tracks horizontally, the robot drives toward wherever the
+          camera is pointing -- potentially diagonally away from the target.
+          Locking pan at center means the robot always drives straight ahead,
+          directly toward the object. Tilt still floats so the camera stays
+          on the target vertically as the bot approaches and the object rises
+          in frame.
+        """
+        # Pan is intentionally not updated -- locked at PAN_CENTER
         if abs(target['offset_y']) > DEADBAND_PX:
             step      = compute_servo_step(target['offset_y'], TILT_GAIN, MAX_STEP_DEG)
             self.tilt = int(np.clip(self.tilt - step, TILT_MIN, TILT_MAX))
             self.robot.Ctrl_Servo(SERVO_TILT, self.tilt)
 
     def _is_centered(self, target):
-        return (abs(target['offset_x']) <= DEADBAND_PX and
-                abs(target['offset_y']) <= DEADBAND_PX)
+        # Only check vertical centering -- pan is locked so horizontal offset
+        # is resolved by the robot rotating during SEARCHING, not by the servo.
+        return abs(target['offset_y']) <= DEADBAND_PX
 
     def _prune_blacklist(self):
         """Remove expired blacklist entries at the start of each frame."""
@@ -578,7 +596,7 @@ class ColorBlockTracker:
 
         self._update_servos(target)
 
-        dist = self.robot.Get_Sonar()
+        dist = self._read_sonar()
         if dist < OBSTACLE_DISTANCE_CM:
             self._stop()
             print(f'[AVOID] Obstacle at {dist:.1f}cm')
@@ -850,6 +868,7 @@ def main():
                 tracker.reject_target(confirming_target)
 
     for i in range(4): robot.Ctrl_Muto(i, 0)
+    robot.Ctrl_Ulatist_Switch(0)   # Power off ultrasonic sensor
     cap.release()
     cv2.destroyAllWindows()
     del robot
