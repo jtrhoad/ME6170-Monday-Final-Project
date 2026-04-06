@@ -304,11 +304,11 @@ def main():
                 # then clamp it to MAX_STEP_DEG so we never lurch.
 
                 if abs(x_err) > DEADBAND_PX:
-                    pan = clamp(pan + compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
+                    pan = clamp(pan - compute_servo_step(x_err, PAN_GAIN, MAX_STEP_DEG),
                                 PAN_MIN, PAN_MAX)
 
                 if abs(y_err) > DEADBAND_PX:
-                    tilt = clamp(tilt + compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
+                    tilt = clamp(tilt - compute_servo_step(y_err, TILT_GAIN, MAX_STEP_DEG),
                                  TILT_MIN, TILT_MAX)
 
         # ------------------------------------------------------------------
