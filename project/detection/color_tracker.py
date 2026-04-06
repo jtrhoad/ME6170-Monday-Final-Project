@@ -47,17 +47,17 @@ TILT_MIN, TILT_MAX =   5,  95
 # ---------------------------------------------------------------------------
 # How many degrees to move per pixel of error.
 # Lower = smoother but slower to acquire. Higher = faster but more jitter.
-PAN_GAIN  = 0.02   # degrees per pixel (horizontal)
-TILT_GAIN = 0.02   # degrees per pixel (vertical)
+PAN_GAIN  = 0.03   # degrees per pixel (horizontal)
+TILT_GAIN = 0.03   # degrees per pixel (vertical)
 
 # Maximum servo movement per frame -- prevents lurching on large sudden errors.
 # Smaller = finer steps = less overshoot past center.
-MAX_STEP_DEG = 1.5
+MAX_STEP_DEG = 2.0
 
 # If the object center is within this many pixels of frame center, don't move.
 # Wide enough to absorb residual overshoot so the servo can settle
 # instead of ping-ponging back and forth.
-DEADBAND_PX = 40
+DEADBAND_PX = 20
 
 # ---------------------------------------------------------------------------
 # Camera Constants
