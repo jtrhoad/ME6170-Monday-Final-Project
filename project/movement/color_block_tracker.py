@@ -421,6 +421,24 @@ class ColorBlockTracker:
         self.pan  = PAN_CENTER
         self.tilt = TILT_CENTER
 
+    def _drive(self, fl, fr, rl, rr):
+        """
+        Drive all four Mecanum wheels individually.
+        Motor index mapping (confirmed from Yahboom library):
+          0 = front-left   1 = front-right
+          2 = rear-left    3 = rear-right
+        Positive = forward, negative = backward for each wheel.
+        """
+        self.robot.Ctrl_Muto(0, fl)
+        self.robot.Ctrl_Muto(1, fr)
+        self.robot.Ctrl_Muto(2, rl)
+        self.robot.Ctrl_Muto(3, rr)
+
+    def _stop(self):
+        """Stop all four wheels."""
+        for i in range(4):
+            self.robot.Ctrl_Muto(i, 0)
+
     def _set_state(self, new_state):
         if new_state != self.state:
             print(f'[STATE] {self.state} -> {new_state}')
@@ -489,7 +507,7 @@ class ColorBlockTracker:
 
     def _run_searching(self, target):
         if target:
-            self.robot.Car_Stop()
+            self._stop()
             self.search_steps = 0
             self.dr.reset()
             self._set_state(TRACKING)
@@ -497,20 +515,20 @@ class ColorBlockTracker:
 
         if self._elapsed() >= SEARCH_ROTATE_STEP:
             # In-place clockwise: left wheels forward, right wheels backward
-            self.robot.Ctrl_Car( SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED,
-                                 SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
+            self._drive( SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED,
+                         SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
             self.dr.rotate(+1, SEARCH_ROTATE_STEP)
             self.search_steps    += 1
             self.last_action_time = time.time()
 
             if self.search_steps >= SEARCH_MAX_STEPS:
                 print('[SEARCH] Full rotation complete, advancing forward.')
-                self.robot.Car_Stop()
-                self.robot.Ctrl_Car(APPROACH_SPEED, APPROACH_SPEED,
-                                    APPROACH_SPEED, APPROACH_SPEED)
+                self._stop()
+                self._drive(APPROACH_SPEED, APPROACH_SPEED,
+                            APPROACH_SPEED, APPROACH_SPEED)
                 time.sleep(0.5)
                 self.dr.move_forward(0.5)
-                self.robot.Car_Stop()
+                self._stop()
                 self.search_steps = 0
                 self.dr.reset()
 
@@ -522,14 +540,14 @@ class ColorBlockTracker:
 
     def _run_tracking(self, target):
         if not target:
-            self.robot.Car_Stop()
+            self._stop()
             self._set_state(SEARCHING)
             return
 
         self._update_servos(target)
 
         if self._is_centered(target):
-            self.robot.Car_Stop()
+            self._stop()
             self._set_state(CONFIRMING)
 
     # -----------------------------------------------------------------------
@@ -553,7 +571,7 @@ class ColorBlockTracker:
 
     def _run_approaching(self, target):
         if not target:
-            self.robot.Car_Stop()
+            self._stop()
             self._set_state(SEARCHING)
             return
 
@@ -561,19 +579,19 @@ class ColorBlockTracker:
 
         dist = self.robot.Get_Sonar()
         if dist < OBSTACLE_DISTANCE_CM:
-            self.robot.Car_Stop()
+            self._stop()
             print(f'[AVOID] Obstacle at {dist:.1f}cm')
             self.avoid_phase = 0
             self._set_state(AVOIDING)
             return
 
         if target['area_ratio'] >= APPROACH_AREA_STOP:
-            self.robot.Car_Stop()
+            self._stop()
             print('[DONE] Reached target.')
             return
 
-        self.robot.Ctrl_Car(APPROACH_SPEED, APPROACH_SPEED,
-                            APPROACH_SPEED, APPROACH_SPEED)
+        self._drive(APPROACH_SPEED, APPROACH_SPEED,
+                    APPROACH_SPEED, APPROACH_SPEED)
 
     # -----------------------------------------------------------------------
     # AVOIDING
@@ -588,7 +606,7 @@ class ColorBlockTracker:
         # If block reappears mid-maneuver (after clearing the obstacle side),
         # skip the remaining phases and go straight to TRACKING.
         if target and self.avoid_phase > 0:
-            self.robot.Car_Stop()
+            self._stop()
             self._set_state(TRACKING)
             return
 
@@ -596,33 +614,35 @@ class ColorBlockTracker:
 
         if self.avoid_phase == 0:
             if elapsed < AVOID_SIDE_DURATION:
-                # Mecanum strafe right: FL=back, FR=fwd, RL=fwd, RR=back
-                self.robot.Ctrl_Car( AVOID_SIDE_SPEED, -AVOID_SIDE_SPEED,
-                                    -AVOID_SIDE_SPEED,  AVOID_SIDE_SPEED)
+                # Mecanum strafe right (confirmed vs dr_calibration.py):
+                # Muto(0,-S), Muto(1,+S), Muto(2,+S), Muto(3,-S)
+                self._drive(-AVOID_SIDE_SPEED,  AVOID_SIDE_SPEED,
+                             AVOID_SIDE_SPEED, -AVOID_SIDE_SPEED)
             else:
                 self.dr.strafe(+1, AVOID_SIDE_DURATION)
-                self.robot.Car_Stop()
+                self._stop()
                 self.avoid_phase      = 1
                 self.last_action_time = time.time()
 
         elif self.avoid_phase == 1:
             if elapsed < AVOID_FORWARD_DURATION:
-                self.robot.Ctrl_Car(AVOID_SPEED, AVOID_SPEED,
-                                    AVOID_SPEED, AVOID_SPEED)
+                self._drive(AVOID_SPEED, AVOID_SPEED,
+                            AVOID_SPEED, AVOID_SPEED)
             else:
                 self.dr.move_forward(AVOID_FORWARD_DURATION)
-                self.robot.Car_Stop()
+                self._stop()
                 self.avoid_phase      = 2
                 self.last_action_time = time.time()
 
         elif self.avoid_phase == 2:
+            # Mecanum strafe left -- opposite of phase 0
+            # Muto(0,+S), Muto(1,-S), Muto(2,-S), Muto(3,+S)
             if elapsed < AVOID_SIDE_DURATION:
-                # Mecanum strafe left: FL=fwd, FR=back, RL=back, RR=fwd
-                self.robot.Ctrl_Car(-AVOID_SIDE_SPEED,  AVOID_SIDE_SPEED,
-                                     AVOID_SIDE_SPEED, -AVOID_SIDE_SPEED)
+                self._drive( AVOID_SIDE_SPEED, -AVOID_SIDE_SPEED,
+                            -AVOID_SIDE_SPEED,  AVOID_SIDE_SPEED)
             else:
                 self.dr.strafe(-1, AVOID_SIDE_DURATION)
-                self.robot.Car_Stop()
+                self._stop()
                 self._set_state(REACQUIRING)
 
     # -----------------------------------------------------------------------
@@ -633,7 +653,7 @@ class ColorBlockTracker:
 
     def _run_reacquiring(self, target):
         if target:
-            self.robot.Car_Stop()
+            self._stop()
             self._set_state(TRACKING)
             return
 
@@ -643,12 +663,12 @@ class ColorBlockTracker:
         if abs(bearing) > 10:
             direction   = +1 if bearing > 0 else -1
             rotate_time = min(abs(bearing) / DEG_PER_SECOND_ROTATE, 0.5)
-            self.robot.Ctrl_Car(
+            self._drive(
                  SEARCH_ROTATE_SPEED * direction, -SEARCH_ROTATE_SPEED * direction,
                  SEARCH_ROTATE_SPEED * direction, -SEARCH_ROTATE_SPEED * direction)
             time.sleep(rotate_time)
             self.dr.rotate(direction, rotate_time)
-            self.robot.Car_Stop()
+            self._stop()
         else:
             # Close enough to estimated angle -- hand off to SEARCHING
             self.dr.reset()
@@ -827,7 +847,7 @@ def main():
             if confirming_target:
                 tracker.reject_target(confirming_target)
 
-    robot.Car_Stop()
+    for i in range(4): robot.Ctrl_Muto(i, 0)
     cap.release()
     cv2.destroyAllWindows()
     del robot
