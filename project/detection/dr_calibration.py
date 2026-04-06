@@ -136,10 +136,10 @@ def test_forward(robot):
     countdown(3, 'Forward movement test starting...')
 
     try:
-        robot.Ctrl_Muto(0, APPROACH_SPEED)
-        robot.Ctrl_Muto(1, APPROACH_SPEED)
-        ##robot.Ctrl_Muto(2, APPROACH_SPEED)
-        ##robot.Ctrl_Muto(3, APPROACH_SPEED)
+        robot.Ctrl_Muto(0, APPROACH_SPEED) ## Left Front
+        ##robot.Ctrl_Muto(1, APPROACH_SPEED) ## Left Rear
+        robot.Ctrl_Muto(2, APPROACH_SPEED) ## Right Front
+        ##robot.Ctrl_Muto(3, APPROACH_SPEED) ## Right Rear
         time.sleep(TEST_DURATION)
     finally:
         robot.Ctrl_Car(0, 0, 0)
