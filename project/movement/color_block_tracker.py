@@ -86,7 +86,7 @@ APPROACH_AREA_STOP = 0.25        # stop when target fills 25% of frame
 APPROACH_SPEED     = 50
 
 # --- Obstacle Avoidance ---
-OBSTACLE_DISTANCE_CM   = 3.0
+OBSTACLE_DISTANCE_CM   = 15.0
 AVOID_SIDE_SPEED       = 60
 AVOID_SIDE_DURATION    = 0.8
 AVOID_FORWARD_DURATION = 1.0
