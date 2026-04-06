@@ -138,8 +138,8 @@ def test_forward(robot):
     try:
         robot.Ctrl_Muto(0, APPROACH_SPEED) ## Left Front
         robot.Ctrl_Muto(1, APPROACH_SPEED) ## Left Rear
-        robot.Ctrl_Muto(2, APPROACH_SPEED*1.05) ## Right Front
-        robot.Ctrl_Muto(3, APPROACH_SPEED*1.05) ## Right Rear
+        robot.Ctrl_Muto(2, APPROACH_SPEED*1.1) ## Right Front
+        robot.Ctrl_Muto(3, APPROACH_SPEED*1.1) ## Right Rear
         time.sleep(TEST_DURATION)
     finally:
         robot.Ctrl_Car(0, 0, 0)
