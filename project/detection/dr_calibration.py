@@ -35,6 +35,7 @@ from Raspbot_Lib import Raspbot
 
 SEARCH_ROTATE_SPEED  = 40    # Must match green_block_tracker.py
 APPROACH_SPEED       = 50    # Must match green_block_tracker.py
+APPROACH_SPEED_R     = 60    # 1.2 times APPROACH_SPEED to compensate for veering right
 AVOID_SIDE_SPEED     = 60    # Must match green_block_tracker.py
 
 TEST_DURATION        = 2.0   # Seconds per test -- longer = easier to measure accurately
@@ -134,9 +135,7 @@ def test_forward(robot):
 
     wait_for_enter('Position the bot on a clear straight path and press ENTER...')
     countdown(3, 'Forward movement test starting...')
-    APPROACH_SPEED_R = APPROACH_SPEED * 1.2  # Compensate for veering right
-    print(APPROACH_SPEED_R)
-    
+
     try:
         robot.Ctrl_Muto(2, APPROACH_SPEED_R) ## Right Front
         robot.Ctrl_Muto(3, APPROACH_SPEED_R) ## Right Rear
