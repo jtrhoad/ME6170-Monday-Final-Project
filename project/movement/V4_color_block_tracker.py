@@ -246,16 +246,24 @@ ESCAPE_FORWARD_SPEED    = 40
 RECENTER_TIMEOUT_S = 2.0
 
 # --- Search ---
-# Slower rotation + shorter steps so the bot doesn't rotate past targets
-# between vision checks. SEARCH_ROTATE_SPEED is intentionally set close to
-# the motor stall floor -- if the bot stops physically rotating, raise this
-# back to ~25.
-SEARCH_ROTATE_SPEED = 20
-SEARCH_ROTATE_STEP  = 0.20       # seconds per rotate step before rechecking
-SEARCH_MAX_STEPS    = 45         # raised because each step covers fewer degrees
+# Rotation speed and step size for in-place rotations (search, scan, dance,
+# recenter). We deliberately match dr_calibration.py's hardcoded
+# SEARCH_ROTATE_SPEED = 40 so DEG_PER_SECOND_ROTATE below is the measured
+# value at this exact PWM, with no linear-scaling approximation needed.
+#
+# At 126 deg/sec, a 0.10 s step covers ~13 deg -- well inside the camera's
+# ~60 deg FOV so a target appears in 4-5 consecutive frames.
+SEARCH_ROTATE_SPEED = 40
+SEARCH_ROTATE_STEP  = 0.10        # seconds per rotate step before rechecking
+SEARCH_MAX_STEPS    = 35          # ~455 deg total, > 1 full rotation
 
 # --- Dead Reckoning (calibrate on actual surface) ---
-DEG_PER_SECOND_ROTATE = 101.0
+# --- Dead Reckoning (calibrate on actual surface) ---
+# DEG_PER_SECOND_ROTATE: measured at SEARCH_ROTATE_SPEED = 40.
+# Latest measurement: compass heading swept from 105 to 357 (252 deg)
+# in 2.0 s -> 126 deg/sec. Rerun dr_calibration.py Test 1 if you change
+# SEARCH_ROTATE_SPEED above, since this constant is rate-at-that-PWM.
+DEG_PER_SECOND_ROTATE = 126.0
 CM_PER_SECOND_FORWARD = 35.25
 CM_PER_SECOND_STRAFE  = 28.90
 
