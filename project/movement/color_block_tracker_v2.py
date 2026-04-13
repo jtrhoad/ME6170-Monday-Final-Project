@@ -68,8 +68,19 @@ TILT_GAIN    = 0.03
 MAX_STEP_DEG = 2.0
 
 # Ignore offsets smaller than this -- stops jitter when nearly centered.
-# Also used by _is_centered() to decide when to transition to CONFIRMING.
 DEADBAND_PX  = 5
+
+# How close (in pixels) the target must be to frame center on BOTH axes
+# before TRACKING declares the bot centered and advances to CONFIRMING.
+# Wider than DEADBAND_PX because the chassis is much coarser than the
+# camera servos -- gear backlash and motor deadzone make sub-10px body
+# centering effectively impossible. 25 px is roughly +/- 4% of frame width.
+TRACK_CENTERED_PX = 25
+
+# Minimum motor command magnitude that actually produces movement.
+# Below this, the wheels stall instead of rotating. Used as a floor for
+# the tracking-yaw PID output so that tiny corrections still move the bot.
+MIN_TRACK_ROTATE_SPEED = 25
 
 # --- Detection ---
 MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
@@ -662,9 +673,10 @@ class ColorBlockTracker:
             self.state            = new_state
             self.last_action_time = time.time()
             self._set_led_for_state(new_state)
-            # Reset PID whenever we (re)enter APPROACHING so old integral state
-            # from a previous run doesn't kick the bot sideways.
-            if new_state == APPROACHING:
+            # Reset PID whenever we (re)enter TRACKING or APPROACHING so old
+            # integral/derivative state from a previous run doesn't kick the
+            # bot sideways on the first frame.
+            if new_state in (TRACKING, APPROACHING):
                 self.yaw_pid.reset()
 
     def _elapsed(self):
@@ -689,9 +701,14 @@ class ColorBlockTracker:
             self.robot.Ctrl_Servo(SERVO_TILT, self.tilt)
 
     def _is_centered(self, target):
-        # Only check vertical centering -- pan is locked so horizontal offset
-        # is resolved by the robot rotating during SEARCHING, not by the servo.
-        return abs(target['offset_y']) <= DEADBAND_PX
+        """
+        Body is considered centered on the target when both horizontal and
+        vertical pixel offsets are within TRACK_CENTERED_PX. Horizontal
+        centering is achieved by body rotation in _run_tracking; vertical
+        centering is achieved by camera tilt in _update_servos.
+        """
+        return (abs(target['offset_x']) <= TRACK_CENTERED_PX and
+                abs(target['offset_y']) <= TRACK_CENTERED_PX)
 
     def _prune_blacklist(self):
         """Remove expired blacklist entries at the start of each frame."""
@@ -758,8 +775,16 @@ class ColorBlockTracker:
 
     # -----------------------------------------------------------------------
     # TRACKING
-    # Target visible. Pan/tilt to center it. Wheels stopped.
-    # Once centered, move to CONFIRMING instead of directly approaching.
+    # Target visible. Rotate body horizontally and tilt camera vertically to
+    # center the target. Once both axes are within TRACK_CENTERED_PX, advance
+    # to CONFIRMING.
+    #
+    # Body rotation uses the yaw PID (same one used by APPROACHING). It is
+    # reset on entry to TRACKING so old state from a previous session can't
+    # kick the bot. The PID output is treated as a wheel rotation speed and
+    # bumped to MIN_TRACK_ROTATE_SPEED if non-zero but below the motor
+    # deadzone -- otherwise tiny corrections produce zero physical motion
+    # and the bot would sit forever just shy of centered.
     # -----------------------------------------------------------------------
 
     def _run_tracking(self, target):
@@ -768,8 +793,28 @@ class ColorBlockTracker:
             self._set_state(SEARCHING)
             return
 
+        # Vertical centering via camera tilt
         self._update_servos(target)
 
+        # Horizontal centering via body rotation
+        x_off = target['offset_x']
+        if abs(x_off) > TRACK_CENTERED_PX:
+            raw_speed = self.yaw_pid.update(float(x_off))
+            speed     = int(raw_speed)
+
+            # Apply motor-deadzone floor: if PID asked for any nonzero motion
+            # but the magnitude is below what the motors can actually act on,
+            # bump it up to the floor (preserving sign).
+            if 0 < abs(speed) < MIN_TRACK_ROTATE_SPEED:
+                speed = MIN_TRACK_ROTATE_SPEED if speed > 0 else -MIN_TRACK_ROTATE_SPEED
+
+            # In-place rotation: left wheels +speed, right wheels -speed.
+            # Positive speed = clockwise = target was to the right.
+            self._drive( speed,  speed, -speed, -speed)
+        else:
+            self._stop()
+
+        # Advance to CONFIRMING only when BOTH axes are inside the deadband
         if self._is_centered(target):
             self._stop()
             self._set_state(CONFIRMING)
