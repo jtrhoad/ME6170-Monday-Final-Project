@@ -53,7 +53,10 @@ from Raspbot_Lib import Raspbot
 CAMERA_INDEX = 0
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
-TARGET_FPS   = 600
+TARGET_FPS   = 60                # USB cameras have a hard ceiling. Setting
+                                 # this to 600 won't make the camera go faster
+                                 # than its physical mode supports -- it caps
+                                 # to whatever the sensor offers <=60.
 
 # --- Servo ---
 SERVO_PAN         = 1
@@ -102,7 +105,8 @@ BLACKLIST_TRACK_RADIUS_PX = 140      # max per-frame jump for entry-tracking
 
 # --- Approach ---
 APPROACH_AREA_STOP = 0.25        # legacy fallback -- arrival now uses sonar
-APPROACH_SPEED     = 50
+APPROACH_SPEED     = 35          # was 50 -- slower so vision tracking can
+                                 # keep up at lower frame rates
 ARRIVAL_DISTANCE_CM = 20.0       # stop when sonar reads <= this distance
                                  # Smaller than OBSTACLE_DISTANCE_CM, so there
                                  # is a 5 cm window (20-25 cm) where sonar
@@ -164,12 +168,12 @@ RECENTER_TIMEOUT_S = 2.0
 
 # --- Search ---
 # Slower rotation + shorter steps so the bot doesn't rotate past targets
-# between vision checks. At SEARCH_ROTATE_SPEED=25 the bot rotates at
-# roughly 60 deg/sec, so a 0.20s step covers ~12 degrees -- the camera
-# FOV is ~60 deg so a target should appear in ~5 consecutive frames.
-SEARCH_ROTATE_SPEED = 25
+# between vision checks. SEARCH_ROTATE_SPEED is intentionally set close to
+# the motor stall floor -- if the bot stops physically rotating, raise this
+# back to ~25.
+SEARCH_ROTATE_SPEED = 20
 SEARCH_ROTATE_STEP  = 0.20       # seconds per rotate step before rechecking
-SEARCH_MAX_STEPS    = 36         # 36 * ~12deg ~ 430deg (1.2 rotations)
+SEARCH_MAX_STEPS    = 45         # raised because each step covers fewer degrees
 
 # --- Dead Reckoning (calibrate on actual surface) ---
 DEG_PER_SECOND_ROTATE = 101.0
@@ -1343,9 +1347,22 @@ def main():
     robot = Raspbot()
 
     cap = cv2.VideoCapture(CAMERA_INDEX)
+
+    # Order matters: set the pixel format (MJPG) BEFORE resolution and FPS,
+    # otherwise OpenCV may pick uncompressed YUYV which is bandwidth-limited
+    # to ~10-15 fps at 640x480 over USB. MJPG is JPEG-compressed at the
+    # sensor and easily sustains 30-60 fps on the same hardware.
+    cap.set(cv2.CAP_PROP_FOURCC,       cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS,          TARGET_FPS)
+
+    # Cap the internal frame buffer at 1. By default OpenCV buffers 3-5
+    # frames; if our loop runs slower than the camera, those frames pile up
+    # and every cap.read() returns a stale frame from hundreds of ms ago.
+    # That manifests as the bot reacting to where the target *was*, not
+    # where it is. Buffer=1 makes each read return the latest available frame.
+    cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
 
     if not cap.isOpened():
         print('ERROR: Could not open camera.')
