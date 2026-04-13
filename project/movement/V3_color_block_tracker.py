@@ -89,19 +89,23 @@ MIN_TRACK_ROTATE_SPEED = 25
 # --- Detection ---
 MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
 
-# --- Blacklist ---
-# When a target is rejected, its frame-center pixel location is blacklisted.
-# Any new contour whose center falls within BLACKLIST_RADIUS_PX of a live
-# blacklist entry is skipped entirely during detection.
-BLACKLIST_DURATION  = 10.0        # seconds the region stays blocked
-BLACKLIST_RADIUS_PX = 100        # pixel radius of the exclusion zone
+# --- Blacklist (sticky -- follows the rejected object as the bot rotates) ---
+# When a target is rejected, the rejected contour's center is recorded as a
+# blacklist entry. Each frame, find_color_block tries to snap each entry to
+# the nearest qualifying contour center within BLACKLIST_TRACK_RADIUS_PX --
+# this lets the entry "ride" the rejected blob as it slides across the frame
+# during rotation. Contours within BLACKLIST_RADIUS_PX of a (now-updated)
+# entry are excluded from selection.
+BLACKLIST_DURATION       = 5.0       # seconds the region stays blocked
+BLACKLIST_RADIUS_PX      = 100       # pixel radius of the exclusion zone
+BLACKLIST_TRACK_RADIUS_PX = 140      # max per-frame jump for entry-tracking
 
 # --- Approach ---
 APPROACH_AREA_STOP = 0.25        # legacy fallback -- arrival now uses sonar
 APPROACH_SPEED     = 50
-ARRIVAL_DISTANCE_CM = 15.0       # stop when sonar reads <= this distance
+ARRIVAL_DISTANCE_CM = 20.0       # stop when sonar reads <= this distance
                                  # Smaller than OBSTACLE_DISTANCE_CM, so there
-                                 # is a 5 cm window (15-20 cm) where sonar
+                                 # is a 5 cm window (20-25 cm) where sonar
                                  # would otherwise treat the target itself as
                                  # an obstacle. _run_approaching suppresses the
                                  # obstacle check when a target is currently
@@ -133,9 +137,14 @@ YAW_INTEGRAL_LIMIT = 200          # anti-windup cap on the integral term
 YAW_DEADBAND_PX    = 8            # ignore tiny errors so the bot doesn't twitch
 
 # --- Obstacle Avoidance ---
-OBSTACLE_DISTANCE_CM   = 20.0
+OBSTACLE_DISTANCE_CM   = 25.0     # bumped from 20 to maintain buffer over
+                                  # the new 20cm arrival distance
 AVOID_SIDE_SPEED       = 60
-AVOID_SIDE_DURATION    = 0.95     # was 1.4 -- reduced to fix ~10-15cm overshoot
+AVOID_SIDE_DURATION    = 1.45     # was 0.95 -- strafe further so the bot
+                                  # has more clearance when re-aligning to
+                                  # the target after the forward phase.
+                                  # At CM_PER_SECOND_STRAFE = 28.9 this is
+                                  # roughly 42 cm of lateral movement.
 AVOID_FORWARD_DURATION = 1.0
 AVOID_SPEED            = 50
 
@@ -333,8 +342,18 @@ def find_color_block(frame, color_key, blacklist):
       3. For red: OR two masks together (handles hue wrap-around).
       4. Morphological close+open: fill holes, remove speckle noise.
       5. Find external contours; filter by MIN_CONTOUR_AREA.
-      6. Skip contours whose center is near a live blacklist entry.
-      7. Return the largest surviving contour as a target dict.
+      6. STICKY BLACKLIST UPDATE -- snap each live blacklist entry to the
+         nearest contour center within BLACKLIST_TRACK_RADIUS_PX, so the
+         entry "rides" the rejected blob across the frame as the bot rotates.
+      7. Filter out contours whose centers fall within BLACKLIST_RADIUS_PX
+         of any (now-updated) entry.
+      8. Return the largest surviving contour as a target dict.
+
+    WHY STICKY BLACKLIST?
+      A static pixel-coordinate blacklist breaks the moment the bot rotates:
+      the rejected object slides to a new pixel position and escapes the
+      exclusion zone. Tracking the entry to the actual blob each frame
+      keeps the exclusion attached to the physical object.
 
     WHY NO SHAPE FILTER?
       Relying solely on color and size is more permissive -- it handles
@@ -344,7 +363,9 @@ def find_color_block(frame, color_key, blacklist):
     Args:
         frame      -- BGR image (not modified)
         color_key  -- 1-8, indexes into COLORS
-        blacklist  -- list of (cx, cy, expiry_time) from tracker
+        blacklist  -- list of [cx, cy, expiry_time] from tracker. MUTATED in
+                      place: live entries are snapped to current contour
+                      positions. Must be a list of lists, not tuples.
 
     Returns:
         dict with keys x, y, w, h, cx, cy, offset_x, offset_y, area,
@@ -365,36 +386,55 @@ def find_color_block(frame, color_key, blacklist):
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                    cv2.CHAIN_APPROX_SIMPLE)
 
-    # Size filter
-    valid = [c for c in contours if cv2.contourArea(c) >= MIN_CONTOUR_AREA]
+    # Size filter -- one pass, also caches bounding box and center per contour
+    candidates = []
+    for c in contours:
+        if cv2.contourArea(c) < MIN_CONTOUR_AREA:
+            continue
+        x, y, w, h = cv2.boundingRect(c)
+        cx, cy = x + w // 2, y + h // 2
+        candidates.append({'contour': c, 'x': x, 'y': y, 'w': w, 'h': h,
+                           'cx': cx, 'cy': cy,
+                           'area': cv2.contourArea(c)})
 
-    # Blacklist filter -- skip contours too close to a rejected region
-    now             = time.time()
-    active_entries  = [(bx, by) for bx, by, exp in blacklist if exp > now]
+    # --- STICKY BLACKLIST UPDATE ---
+    # For each live entry, snap to the nearest candidate center within the
+    # tracking radius. This must happen BEFORE filtering, because we want
+    # entries to track even contours they would later exclude.
+    now = time.time()
+    for entry in blacklist:
+        if entry[2] <= now:
+            continue   # expired
+        bx, by = entry[0], entry[1]
+        best_d   = BLACKLIST_TRACK_RADIUS_PX
+        best_pos = None
+        for cand in candidates:
+            d = math.hypot(cand['cx'] - bx, cand['cy'] - by)
+            if d < best_d:
+                best_d   = d
+                best_pos = (cand['cx'], cand['cy'])
+        if best_pos is not None:
+            entry[0] = best_pos[0]
+            entry[1] = best_pos[1]
 
-    def is_blacklisted(contour):
-        bx_c, by_c, bw, bh = cv2.boundingRect(contour)
-        cx = bx_c + bw // 2
-        cy = by_c + bh // 2
-        return any(math.hypot(cx - bx, cy - by) < BLACKLIST_RADIUS_PX
-                   for bx, by in active_entries)
-
-    valid = [c for c in valid if not is_blacklisted(c)]
+    # --- BLACKLIST EXCLUSION FILTER ---
+    active = [(e[0], e[1]) for e in blacklist if e[2] > now]
+    valid  = [cand for cand in candidates
+              if not any(math.hypot(cand['cx'] - bx, cand['cy'] - by)
+                         < BLACKLIST_RADIUS_PX
+                         for bx, by in active)]
 
     if not valid:
         return None
 
-    best       = max(valid, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(best)
-    cx, cy     = x + w // 2, y + h // 2
-
+    best = max(valid, key=lambda c: c['area'])
     return {
-        'x': x, 'y': y, 'w': w, 'h': h,
-        'cx': cx, 'cy': cy,
-        'offset_x':   cx - FRAME_CX,
-        'offset_y':   cy - FRAME_CY,
-        'area':       cv2.contourArea(best),
-        'area_ratio': cv2.contourArea(best) / FRAME_AREA,
+        'x': best['x'], 'y': best['y'], 'w': best['w'], 'h': best['h'],
+        'cx': best['cx'], 'cy': best['cy'],
+        'offset_x':   best['cx'] - FRAME_CX,
+        'offset_y':   best['cy'] - FRAME_CY,
+        'area':       best['area'],
+        'area_ratio': best['area'] / FRAME_AREA,
     }
 
 
@@ -737,9 +777,11 @@ class ColorBlockTracker:
         """
         if self.state == CONFIRMING:
             expiry = time.time() + BLACKLIST_DURATION
-            self.blacklist.append((target['cx'], target['cy'], expiry))
+            # Use a list (not tuple) so find_color_block can update the
+            # entry's coordinates as the rejected blob slides across the frame.
+            self.blacklist.append([target['cx'], target['cy'], expiry])
             print(f'[BLACKLIST] ({target["cx"]}, {target["cy"]}) '
-                  f'blocked for {BLACKLIST_DURATION:.0f}s')
+                  f'blocked for {BLACKLIST_DURATION:.0f}s (sticky)')
             self._set_state(SEARCHING)
 
     # -----------------------------------------------------------------------
@@ -1045,26 +1087,27 @@ class ColorBlockTracker:
     @property
     def _dance_steps(self):
         """
-        Build the dance step list once. Each entry is (drive_left, drive_right, duration).
-        Three sets of [+20 right, -40 left, +20 right] = swing right, swing through
-        to left, swing back to center.
+        Build the dance step list once. Each entry is (drive_command, duration).
+        Four sets of [+12 right, -24 left, +12 right] -- tighter swings around
+        center read more like dancing than the original wide arcs. Shorter
+        pauses between steps for snappier rhythm.
         """
         s = SEARCH_ROTATE_SPEED
-        t20 = 20.0 / DEG_PER_SECOND_ROTATE      # time to rotate 20 deg
-        t40 = 40.0 / DEG_PER_SECOND_ROTATE      # time to rotate 40 deg
-        pause = 0.08
+        t12 = 12.0 / DEG_PER_SECOND_ROTATE      # time to rotate 12 deg
+        t24 = 24.0 / DEG_PER_SECOND_ROTATE      # time to rotate 24 deg
+        pause = 0.05
         right = ( s,  s, -s, -s)                # rotate clockwise
         left  = (-s, -s,  s,  s)                # rotate counterclockwise
         stop  = ( 0,  0,  0,  0)
         one_set = [
-            (right, t20),   # 0  -> +20
+            (right, t12),   #  0 -> +12
             (stop,  pause),
-            (left,  t40),   # +20 -> -20
+            (left,  t24),   # +12 -> -12
             (stop,  pause),
-            (right, t20),   # -20 -> 0
+            (right, t12),   # -12 -> 0
             (stop,  pause),
         ]
-        return one_set * 3
+        return one_set * 4
 
     def _run_arrived(self, target):
         if self.dance_complete:
@@ -1079,8 +1122,9 @@ class ColorBlockTracker:
             self.dance_led_on     = True
             self.robot.Ctrl_WQ2812_ALL(1, 1)   # green on
 
-        # LED slow flash (~1 Hz)
-        if time.time() - self.dance_led_last >= 0.5:
+        # LED flash (~2.5 Hz -- snappy but well below the ~3 Hz photosensitive
+        # epilepsy threshold).
+        if time.time() - self.dance_led_last >= 0.20:
             self.dance_led_on  = not self.dance_led_on
             self.dance_led_last = time.time()
             if self.dance_led_on:
