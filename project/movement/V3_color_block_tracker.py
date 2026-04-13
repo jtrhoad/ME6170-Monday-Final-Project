@@ -153,10 +153,23 @@ SCAN_ROTATE_ANGLE_DEG  = 90.0     # how far to swing each side
 SCAN_SETTLE_TIME       = 0.25     # let sensor stabilize after rotation stops
 SCAN_SAMPLES           = 3        # average this many sonar reads per side
 
+# --- Post-scan vision recentering ---
+# After SCANNING_OBSTACLE returns the body to "forward", motor inertia and
+# calibration drift can leave the chassis 20-50 deg off the original heading.
+# Before committing to a strafe direction, we re-center on the target using
+# the body PID so the strafe is actually perpendicular to the line of sight.
+# If the target isn't visible (e.g., obstacle is blocking the camera too),
+# fall through to AVOIDING after this many seconds.
+RECENTER_TIMEOUT_S = 2.0
+
 # --- Search ---
-SEARCH_ROTATE_SPEED = 40
-SEARCH_ROTATE_STEP  = 0.3        # seconds per rotate step before rechecking
-SEARCH_MAX_STEPS    = 24         # 24 steps * 0.3s ~ 360 degrees
+# Slower rotation + shorter steps so the bot doesn't rotate past targets
+# between vision checks. At SEARCH_ROTATE_SPEED=25 the bot rotates at
+# roughly 60 deg/sec, so a 0.20s step covers ~12 degrees -- the camera
+# FOV is ~60 deg so a target should appear in ~5 consecutive frames.
+SEARCH_ROTATE_SPEED = 25
+SEARCH_ROTATE_STEP  = 0.20       # seconds per rotate step before rechecking
+SEARCH_MAX_STEPS    = 36         # 36 * ~12deg ~ 430deg (1.2 rotations)
 
 # --- Dead Reckoning (calibrate on actual surface) ---
 DEG_PER_SECOND_ROTATE = 101.0
@@ -211,14 +224,15 @@ COLORS = {
 # STATES
 # ===========================================================================
 
-SEARCHING         = 'SEARCHING'
-TRACKING          = 'TRACKING'
-CONFIRMING        = 'CONFIRMING'
-APPROACHING       = 'APPROACHING'
-SCANNING_OBSTACLE = 'SCANNING_OBSTACLE'
-AVOIDING          = 'AVOIDING'
-REACQUIRING       = 'REACQUIRING'
-ARRIVED           = 'ARRIVED'
+SEARCHING            = 'SEARCHING'
+TRACKING             = 'TRACKING'
+CONFIRMING           = 'CONFIRMING'
+APPROACHING          = 'APPROACHING'
+SCANNING_OBSTACLE    = 'SCANNING_OBSTACLE'
+RECENTERING_FOR_AVOID = 'RECENTERING_FOR_AVOID'
+AVOIDING             = 'AVOIDING'
+REACQUIRING          = 'REACQUIRING'
+ARRIVED              = 'ARRIVED'
 
 FRAME_CX   = FRAME_WIDTH  // 2   # 320
 FRAME_CY   = FRAME_HEIGHT // 2   # 240
@@ -226,14 +240,15 @@ FRAME_AREA = FRAME_WIDTH * FRAME_HEIGHT
 
 # On-screen state label colors (BGR)
 STATE_COLORS = {
-    SEARCHING:         (100, 100, 100),
-    TRACKING:          (0,   200, 255),
-    CONFIRMING:        (0,   255, 150),
-    APPROACHING:       (0,   200, 0),
-    SCANNING_OBSTACLE: (0,   140, 255),
-    AVOIDING:          (0,   80,  255),
-    REACQUIRING:       (200, 100, 0),
-    ARRIVED:           (0,   255, 0),
+    SEARCHING:             (100, 100, 100),
+    TRACKING:              (0,   200, 255),
+    CONFIRMING:            (0,   255, 150),
+    APPROACHING:           (0,   200, 0),
+    SCANNING_OBSTACLE:     (0,   140, 255),
+    RECENTERING_FOR_AVOID: (0,   200, 255),
+    AVOIDING:              (0,   80,  255),
+    REACQUIRING:           (200, 100, 0),
+    ARRIVED:               (0,   255, 0),
 }
 
 # LED bar color codes per Yahboom Ctrl_WQ2812_ALL:
@@ -241,14 +256,15 @@ STATE_COLORS = {
 # A value of None means "leave LEDs in their current managed state"
 # (used by ARRIVED so the dance can flash without being overridden each frame).
 STATE_LED_COLORS = {
-    SEARCHING:         5,   # cyan   -- scanning
-    TRACKING:          3,   # yellow -- locked, centering
-    CONFIRMING:        6,   # white  -- waiting on user
-    APPROACHING:       1,   # green  -- driving toward target
-    SCANNING_OBSTACLE: 3,   # yellow -- caution, looking around
-    AVOIDING:          0,   # red    -- maneuvering around obstacle
-    REACQUIRING:       4,   # purple -- hunting for lost target
-    ARRIVED:           None,
+    SEARCHING:             5,   # cyan   -- scanning
+    TRACKING:              3,   # yellow -- locked, centering
+    CONFIRMING:            6,   # white  -- waiting on user
+    APPROACHING:           1,   # green  -- driving toward target
+    SCANNING_OBSTACLE:     3,   # yellow -- caution, looking around
+    RECENTERING_FOR_AVOID: 3,   # yellow -- still in obstacle handling
+    AVOIDING:              0,   # red    -- maneuvering around obstacle
+    REACQUIRING:           4,   # purple -- hunting for lost target
+    ARRIVED:               None,
 }
 
 
@@ -717,10 +733,10 @@ class ColorBlockTracker:
             self.state            = new_state
             self.last_action_time = time.time()
             self._set_led_for_state(new_state)
-            # Reset PID whenever we (re)enter TRACKING or APPROACHING so old
-            # integral/derivative state from a previous run doesn't kick the
-            # bot sideways on the first frame.
-            if new_state in (TRACKING, APPROACHING):
+            # Reset PID whenever we (re)enter any state that uses body
+            # rotation feedback so old integral/derivative state from a
+            # previous run doesn't kick the bot sideways on the first frame.
+            if new_state in (TRACKING, APPROACHING, RECENTERING_FOR_AVOID):
                 self.yaw_pid.reset()
 
     def _elapsed(self):
@@ -969,7 +985,8 @@ class ColorBlockTracker:
             self.scan_phase = 2
 
         elif self.scan_phase == 2:
-            # Return to original heading
+            # Return to original heading (approximately -- subject to motor
+            # overshoot). Vision-based recentering picks up the slack next.
             self._rotate_blocking(-1, SCAN_ROTATE_ANGLE_DEG)
 
             # Pick the clearer side. Tie -> default to right.
@@ -982,9 +999,67 @@ class ColorBlockTracker:
                 print(f'[SCAN] Going RIGHT ({self.scan_right_dist:.0f} vs '
                       f'{self.scan_left_dist:.0f})')
 
-            self.avoid_phase      = 0
+            # Hand off to vision-based recentering instead of straight to
+            # AVOIDING. The recentering state will body-rotate to put the
+            # target back at frame center, then start the strafe.
             self.last_action_time = time.time()
-            self._set_state(AVOIDING)
+            self._set_state(RECENTERING_FOR_AVOID)
+
+    # -----------------------------------------------------------------------
+    # RECENTERING_FOR_AVOID
+    # Vision-based heading correction after SCANNING_OBSTACLE. The dead-
+    # reckoned rotations during scanning are subject to motor inertia and
+    # speed-vs-time calibration drift, so by the time we return to "center"
+    # the chassis can be 20-50 deg off the original target heading. If we
+    # strafed at that point, we'd move at the wrong angle and either clip
+    # the obstacle or miss the target re-acquisition.
+    #
+    # This state runs the body PID against the target's horizontal pixel
+    # offset (same logic as TRACKING) until the target is centered, then
+    # starts the strafe. If the target isn't visible (camera blocked, or
+    # we're way off heading), it falls through to AVOIDING after
+    # RECENTER_TIMEOUT_S so the bot doesn't sit forever.
+    # -----------------------------------------------------------------------
+
+    def _start_avoiding(self):
+        """Prep state and transition into AVOIDING."""
+        self._stop()
+        self.avoid_phase      = 0
+        self.last_action_time = time.time()
+        self._set_state(AVOIDING)
+
+    def _run_recentering_for_avoid(self, target):
+        # Hard timeout -- always proceed eventually so the bot can't get
+        # stuck spinning here if the target is occluded.
+        if self._elapsed() > RECENTER_TIMEOUT_S:
+            print(f'[RECENTER] Timeout ({RECENTER_TIMEOUT_S}s) -- '
+                  f'proceeding to AVOIDING')
+            self._start_avoiding()
+            return
+
+        if not target:
+            # No target visible. Just hold position and let the timeout
+            # carry us forward. Rotating to search here would risk losing
+            # whatever heading we have.
+            self._stop()
+            return
+
+        x_off = target['offset_x']
+
+        # Centered? Done -- start the strafe.
+        if abs(x_off) <= TRACK_CENTERED_PX:
+            print(f'[RECENTER] Visually centered (offset_x={x_off:+d}px) '
+                  f'-- starting AVOIDING')
+            self._start_avoiding()
+            return
+
+        # Body PID rotation to bring x_off toward zero (same pattern as
+        # _run_tracking).
+        raw_speed = self.yaw_pid.update(float(x_off))
+        speed     = int(raw_speed)
+        if 0 < abs(speed) < MIN_TRACK_ROTATE_SPEED:
+            speed = MIN_TRACK_ROTATE_SPEED if speed > 0 else -MIN_TRACK_ROTATE_SPEED
+        self._drive( speed,  speed, -speed, -speed)
 
     # -----------------------------------------------------------------------
     # AVOIDING
@@ -1156,14 +1231,15 @@ class ColorBlockTracker:
         self._prune_blacklist()
         target = find_color_block(frame, self.color_key, self.blacklist)
 
-        if   self.state == SEARCHING:         self._run_searching(target)
-        elif self.state == TRACKING:          self._run_tracking(target)
-        elif self.state == CONFIRMING:        self._run_confirming(target)
-        elif self.state == APPROACHING:       self._run_approaching(target)
-        elif self.state == SCANNING_OBSTACLE: self._run_scanning_obstacle(target)
-        elif self.state == AVOIDING:          self._run_avoiding(target)
-        elif self.state == REACQUIRING:       self._run_reacquiring(target)
-        elif self.state == ARRIVED:           self._run_arrived(target)
+        if   self.state == SEARCHING:             self._run_searching(target)
+        elif self.state == TRACKING:              self._run_tracking(target)
+        elif self.state == CONFIRMING:            self._run_confirming(target)
+        elif self.state == APPROACHING:           self._run_approaching(target)
+        elif self.state == SCANNING_OBSTACLE:     self._run_scanning_obstacle(target)
+        elif self.state == RECENTERING_FOR_AVOID: self._run_recentering_for_avoid(target)
+        elif self.state == AVOIDING:              self._run_avoiding(target)
+        elif self.state == REACQUIRING:           self._run_reacquiring(target)
+        elif self.state == ARRIVED:               self._run_arrived(target)
 
         return target
 
@@ -1247,7 +1323,8 @@ def draw_overlay(frame, target, tracker):
                 (10, 58), font, 0.6, tracker.box_color, 2)
 
     # Dead reckoning readout
-    if tracker.state in (AVOIDING, REACQUIRING, SCANNING_OBSTACLE):
+    if tracker.state in (AVOIDING, REACQUIRING, SCANNING_OBSTACLE,
+                         RECENTERING_FOR_AVOID):
         dr = tracker.dr
         cv2.putText(frame,
                     f'DR  pos:({dr.x:.0f},{dr.y:.0f})cm  hdg:{dr.heading:.0f}deg',
