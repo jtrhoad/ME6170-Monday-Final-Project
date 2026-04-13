@@ -137,7 +137,7 @@ YAW_INTEGRAL_LIMIT = 200          # anti-windup cap on the integral term
 YAW_DEADBAND_PX    = 8            # ignore tiny errors so the bot doesn't twitch
 
 # --- Obstacle Avoidance ---
-OBSTACLE_DISTANCE_CM   = 25.0     # bumped from 20 to maintain buffer over
+OBSTACLE_DISTANCE_CM   = 20.0     # bumped from 20 to maintain buffer over
                                   # the new 20cm arrival distance
 AVOID_SIDE_SPEED       = 60
 AVOID_SIDE_DURATION    = 1.45     # was 0.95 -- strafe further so the bot
