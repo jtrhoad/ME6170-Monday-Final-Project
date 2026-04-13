@@ -111,7 +111,7 @@ TARGET_LOCK_PX      = 80         # if a target is within this many pixels of
                                  # frame-center horizontally, we trust that
                                  # whatever sonar sees IS the target, not an
                                  # obstacle, and skip the obstacle check.
-ARRIVAL_MIN_AREA    = 0.1       # target must fill at least this fraction of
+ARRIVAL_MIN_AREA    = 0.08       # target must fill at least this fraction of
                                  # the frame to count as "arrived." Prevents
                                  # false arrivals when an unrelated object
                                  # crosses sonar at <15 cm while the real
