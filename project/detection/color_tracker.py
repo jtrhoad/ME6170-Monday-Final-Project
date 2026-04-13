@@ -40,7 +40,7 @@ SERVO_TILT  = 2
 PAN_CENTER  = 72
 TILT_CENTER = 25
 PAN_MIN,  PAN_MAX  =   5, 175   # Hard limits -- robot will not exceed these
-TILT_MIN, TILT_MAX =   -10,  95
+TILT_MIN, TILT_MAX =   0,  95
 
 # ---------------------------------------------------------------------------
 # Tracking Tuning -- PID controllers for pan and tilt
