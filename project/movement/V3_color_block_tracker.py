@@ -61,7 +61,7 @@ SERVO_TILT        = 2
 PAN_CENTER        = 72
 TILT_CENTER       = 25
 PAN_MIN,  PAN_MAX  =  5, 175    # Hard angle limits -- never exceeded
-TILT_MIN, TILT_MAX =  5,  95
+TILT_MIN, TILT_MAX =  0,  95
 
 # Proportional gain: degrees of servo movement per pixel of error.
 # Lower = smoother but slower. Higher = faster but more jitter.
@@ -93,7 +93,7 @@ MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
 # When a target is rejected, its frame-center pixel location is blacklisted.
 # Any new contour whose center falls within BLACKLIST_RADIUS_PX of a live
 # blacklist entry is skipped entirely during detection.
-BLACKLIST_DURATION  = 8.0        # seconds the region stays blocked
+BLACKLIST_DURATION  = 10.0        # seconds the region stays blocked
 BLACKLIST_RADIUS_PX = 100        # pixel radius of the exclusion zone
 
 # --- Approach ---
