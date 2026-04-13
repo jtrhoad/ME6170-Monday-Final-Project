@@ -53,7 +53,7 @@ from Raspbot_Lib import Raspbot
 CAMERA_INDEX = 0
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
-TARGET_FPS   = 60
+TARGET_FPS   = 600
 
 # --- Servo ---
 SERVO_PAN         = 1
