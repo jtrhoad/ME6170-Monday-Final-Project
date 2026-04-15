@@ -748,6 +748,18 @@ class ColorBlockTracker:
         self._last_motor_cmd = [None, None, None, None]
 
         self.robot.Ctrl_Ulatist_Switch(1)   # Power on ultrasonic sensor
+        # The Yahboom sonar takes a few hundred ms after enable before reads
+        # return real values. Without this delay the first SCANNING_OBSTACLE
+        # cycle gets all-zero reads and the bot loops trapped/escape forever.
+        time.sleep(0.5)
+        # Sanity-check: try a few reads and warn if they're all bogus.
+        warmup = [self._read_sonar() for _ in range(3)]
+        if all(r >= 999.0 for r in warmup):
+            print('[SONAR] WARNING: all warmup reads failed -- '
+                  'sensor may not be powered/connected. '
+                  'Run ultrasonic_test.py to verify.')
+        else:
+            print(f'[SONAR] Warmup reads: {[round(r,1) for r in warmup]} cm')
         self._center_camera()
         self._set_led_for_state(self.state)
 
@@ -793,22 +805,41 @@ class ColorBlockTracker:
           0x1b = high byte,  0x1a = low byte
         Combined: (high << 8 | low) / 10.0 gives distance in cm.
         Returns 999.0 on read failure so the bot treats the path as clear.
+
+        IMPORTANT: A successful read of 0.0 is treated as a FAILED read,
+        not as "obstacle touching the sensor." In practice 0.0 only happens
+        when the sensor is powered down, mid-warmup, or the I2C transaction
+        silently returned zero bytes. Treating 0.0 as a real "0 cm distance"
+        used to cause the bot to declare itself trapped on every scan and
+        loop endlessly through SCANNING_OBSTACLE -> ESCAPE_BACKWARD.
         """
         try:
             dist_H = self.robot.read_data_array(0x1b, 1)[0]
             dist_L = self.robot.read_data_array(0x1a, 1)[0]
-            return (dist_H << 8 | dist_L) / 10.0
+            raw    = (dist_H << 8 | dist_L) / 10.0
         except Exception as e:
             dbg(f'[SONAR] Read error: {e}')
             return 999.0
 
+        if raw <= 0.0:
+            return 999.0
+        return raw
+
     def _read_sonar_avg(self, samples=SCAN_SAMPLES):
-        """Average several sonar reads to reject single-frame noise."""
-        readings = []
+        """
+        Average several sonar reads to reject single-frame noise.
+        Discards 999.0 (failed) reads from the average; if every sample is a
+        failed read, returns 999.0 so the caller sees "clear / unknown."
+        """
+        valid = []
         for _ in range(samples):
-            readings.append(self._read_sonar())
+            r = self._read_sonar()
+            if r < 999.0:
+                valid.append(r)
             time.sleep(0.02)
-        return sum(readings) / len(readings) if readings else 999.0
+        if not valid:
+            return 999.0
+        return sum(valid) / len(valid)
 
     def _rotate_blocking(self, direction, degrees):
         """
@@ -1133,7 +1164,7 @@ class ColorBlockTracker:
             # Settle, sample LEFT, start RIGHT rotation
             if elapsed >= SCAN_SETTLE_TIME:
                 self.scan_left_dist = self._read_sonar_avg()
-                dbg(f'[SCAN] Left clearance:  {self.scan_left_dist:.1f}cm')
+                print(f'[SCAN] Left clearance:  {self.scan_left_dist:.1f}cm')
                 self._start_rotation(+1)
                 self.scan_phase       = 3
                 self.scan_phase_start = time.time()
@@ -1150,7 +1181,7 @@ class ColorBlockTracker:
             # Settle, sample RIGHT, start return rotation
             if elapsed >= SCAN_SETTLE_TIME:
                 self.scan_right_dist = self._read_sonar_avg()
-                dbg(f'[SCAN] Right clearance: {self.scan_right_dist:.1f}cm')
+                print(f'[SCAN] Right clearance: {self.scan_right_dist:.1f}cm')
                 self._start_rotation(-1)
                 self.scan_phase       = 5
                 self.scan_phase_start = time.time()
@@ -1590,6 +1621,44 @@ def draw_overlay(frame, target, tracker):
         cv2.putText(frame,
                     f'DR  pos:({dr.x:.0f},{dr.y:.0f})cm  hdg:{dr.heading:.0f}deg',
                     (10, 85), font, 0.55, (200, 100, 0), 2)
+
+    # ----------------------------------------------------------------------
+    # OBSTACLE-HANDLING DIAGNOSTIC HUD
+    # During scanning / recentering / avoiding, show a big, unambiguous
+    # readout of the most recent sonar scan and the chosen strafe direction.
+    # This lets you visually confirm whether the bot's physical motion
+    # matches the displayed direction, without watching the terminal.
+    # ----------------------------------------------------------------------
+    if tracker.state in (SCANNING_OBSTACLE, RECENTERING_FOR_AVOID, AVOIDING):
+        left  = tracker.scan_left_dist
+        right = tracker.scan_right_dist
+
+        # Background panel for legibility
+        panel = frame.copy()
+        cv2.rectangle(panel, (FRAME_WIDTH - 280, 100),
+                              (FRAME_WIDTH - 10,  220), (15, 15, 15), -1)
+        cv2.addWeighted(panel, 0.78, frame, 0.22, 0, frame)
+
+        # Left / right clearance readings (color = green if far, red if near)
+        def clear_color(d):
+            if d >= OBSTACLE_DISTANCE_CM * 1.5: return (0, 255, 0)
+            if d >= OBSTACLE_DISTANCE_CM:        return (0, 255, 255)
+            return (0, 80, 255)
+
+        cv2.putText(frame, f'L: {left:5.0f} cm',
+                    (FRAME_WIDTH - 270, 130), font, 0.7, clear_color(left), 2)
+        cv2.putText(frame, f'R: {right:5.0f} cm',
+                    (FRAME_WIDTH - 270, 158), font, 0.7, clear_color(right), 2)
+
+        # Big arrow showing chosen avoid direction
+        if tracker.avoid_direction > 0:
+            dir_text  = '-> RIGHT'
+            dir_color = (0, 255, 0) if right > left else (0, 80, 255)
+        else:
+            dir_text  = 'LEFT <-'
+            dir_color = (0, 255, 0) if left > right else (0, 80, 255)
+        cv2.putText(frame, dir_text,
+                    (FRAME_WIDTH - 270, 198), font, 0.95, dir_color, 3)
 
     cv2.putText(frame, 'Q: quit',
                 (FRAME_WIDTH - 80, 30), font, 0.5, (200, 200, 200), 1)
