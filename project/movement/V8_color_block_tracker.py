@@ -204,6 +204,12 @@ SCAN_ROTATE_ANGLE_DEG  = 90.0
 SCAN_SETTLE_TIME       = 0.25
 SCAN_SAMPLES           = 3
 
+# Motors take ~80-100ms to ramp from 0 to full speed. For short rotations
+# (0.7s) this eats ~14% of the duration and the bot under-rotates by ~20°.
+# For long rotations (1.4s) the same lag is only ~7% and barely noticeable.
+# This constant adds a fixed time to every rotation to compensate.
+ROTATION_STARTUP_COMP_S = 0.10
+
 # --- Search ---
 SEARCH_ROTATE_SPEED = 40
 SEARCH_ROTATE_STEP  = 0.10
@@ -612,6 +618,9 @@ class ColorBlockTracker:
         self.pan              = PAN_CENTER
         self.tilt             = TILT_CENTER
         self.search_steps     = 0
+        self.search_direction = +1   # +1 = clockwise, -1 = CCW.
+                                     # Set to -avoid_direction after obstacle
+                                     # avoidance so we search toward the target.
         self.avoid_phase      = 0
         self.avoid_direction  = +1   # +1 = rotate right, -1 = rotate left
         self.wall_ref_dist   = 0.0  # original obstacle distance for wall-peek comparison
@@ -745,8 +754,9 @@ class ColorBlockTracker:
 
     @staticmethod
     def _rotation_duration_for(degrees):
-        """How many seconds at SEARCH_ROTATE_SPEED to rotate the given angle."""
-        return degrees / DEG_PER_SECOND_ROTATE
+        """Seconds at SEARCH_ROTATE_SPEED to rotate the given angle,
+        including a small startup compensation for motor ramp-up lag."""
+        return degrees / DEG_PER_SECOND_ROTATE + ROTATION_STARTUP_COMP_S
 
     def _set_led_for_state(self, state):
         """
@@ -843,25 +853,29 @@ class ColorBlockTracker:
 
     # -----------------------------------------------------------------------
     # SEARCHING
-    # Rotate bot clockwise in SEARCH_ROTATE_STEP increments.
+    # Rotate bot in self.search_direction increments.
     # Stops and transitions to TRACKING the moment a blob is detected.
-    # After a full 360, nudges forward and restarts scan.
+    # After a full rotation, nudges forward and restarts scan.
+    #
+    # search_direction is +1 (clockwise) by default, but set to
+    # -avoid_direction after obstacle avoidance so the bot searches toward
+    # the target instead of away from it.
     # -----------------------------------------------------------------------
 
     def _run_searching(self, target):
         if target:
             self._stop()
-            self.search_steps = 0
+            self.search_steps     = 0
+            self.search_direction = +1   # reset to default for next search
             self.dr.reset()
             self._set_state(TRACKING)
             return
 
         if self._elapsed() >= SEARCH_ROTATE_STEP:
-            # In-place clockwise: left side (motors 0,1) forward, right side (motors 2,3) backward
-            # Confirmed vs dr_calibration.py: Muto(0,+S), Muto(1,+S), Muto(2,-S), Muto(3,-S)
-            self._drive( SEARCH_ROTATE_SPEED,  SEARCH_ROTATE_SPEED,
-                        -SEARCH_ROTATE_SPEED, -SEARCH_ROTATE_SPEED)
-            self.dr.rotate(+1, SEARCH_ROTATE_STEP)
+            sd = self.search_direction
+            self._drive( SEARCH_ROTATE_SPEED * sd,  SEARCH_ROTATE_SPEED * sd,
+                        -SEARCH_ROTATE_SPEED * sd, -SEARCH_ROTATE_SPEED * sd)
+            self.dr.rotate(sd, SEARCH_ROTATE_STEP)
             self.search_steps    += 1
             self.last_action_time = time.time()
 
@@ -1265,11 +1279,12 @@ class ColorBlockTracker:
                     self.last_action_time = time.time()
 
                 elif peek_dist > hi:
-                    # Wall ended — strafe to clear corner
+                    # Wall ended — bot is already facing toward the target
+                    # (from the peek rotation). Just strafe in the travel
+                    # direction to clear the corner edge, then SEARCHING.
                     print(f'[AVOID] Wall ended (peek={peek_dist:.0f}cm, '
                           f'ref was {ref:.0f}cm) -- clearing corner')
-                    # First rotate back to travel direction before strafing
-                    self.avoid_phase      = 8
+                    self.avoid_phase      = 10
                     self.last_action_time = time.time()
 
                 else:
@@ -1301,32 +1316,19 @@ class ColorBlockTracker:
             else:
                 self._start_rotation(d)   # re-send each frame
 
-        # --- Phase 8: rotate back to travel dir, then start corner strafe ---
-        elif self.avoid_phase == 8:
-            self._start_rotation(d)
-            self.avoid_phase      = 9
-            self.last_action_time = time.time()
-
-        # --- Phase 9: wait for rotation, then start strafe ---
-        elif self.avoid_phase == 9:
-            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
-                self._stop()
-                self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
-                self.avoid_phase      = 10
-                self.last_action_time = time.time()
-            else:
-                self._start_rotation(d)   # re-send each frame
-
-        # --- Phase 10: strafe toward wall side to clear corner ---
+        # --- Phase 10: strafe in travel direction to clear the corner ---
+        # After the peek found the wall gone, the bot is facing toward the
+        # target (peek_dir). A brief strafe in the travel direction (d) moves
+        # the bot past the corner edge so it doesn't clip when approaching.
         elif self.avoid_phase == 10:
             if elapsed < CORNER_CLEAR_DURATION:
-                # Strafe toward where the wall was (peek_dir side)
                 s = CORNER_CLEAR_SPEED
-                self._drive( s * peek_dir, -s * peek_dir,
-                            -s * peek_dir,  s * peek_dir)
+                self._drive( s * d, -s * d,
+                            -s * d,  s * d)
             else:
                 self._stop()
                 self.dr.reset()
+                self.search_direction = peek_dir  # search toward target
                 print('[AVOID] Corner cleared -- returning to SEARCHING')
                 self._set_state(SEARCHING)
 
