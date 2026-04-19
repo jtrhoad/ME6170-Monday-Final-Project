@@ -208,7 +208,7 @@ SCAN_SAMPLES           = 3
 # (0.7s) this eats ~14% of the duration and the bot under-rotates by ~20°.
 # For long rotations (1.4s) the same lag is only ~7% and barely noticeable.
 # This constant adds a fixed time to every rotation to compensate.
-ROTATION_STARTUP_COMP_S = 0.10
+ROTATION_STARTUP_COMP_S = 0.15
 
 # --- Search ---
 SEARCH_ROTATE_SPEED = 40
