@@ -1022,25 +1022,24 @@ class ColorBlockTracker:
         self._drive(left, left, right, right)
 
     # -----------------------------------------------------------------------
-    # SCANNING_OBSTACLE  (non-blocking, phased)
-    # Sonar pair is fixed forward, so we rotate the *body* to point them at
-    # the left side and then the right side. After both readings the bot
-    # rotates back to its original heading and either:
-    #   - picks the side with greater clearance and goes to AVOIDING, or
-    #   - if BOTH sides are within TRAPPED_THRESHOLD_CM, declares trapped and
-    #     transitions to ESCAPE_BACKWARD (180 + drive away).
+    # SCANNING_OBSTACLE  (non-blocking, rotation-optimized)
     #
-    # Phases (each frame just checks elapsed time, never sleeps):
-    #   0  start LEFT rotation
-    #   1  rotating LEFT  -- wait
-    #   2  settle, sample LEFT sonar, start RIGHT rotation
-    #   3  rotating RIGHT -- wait
-    #   4  settle, sample RIGHT sonar, start return-LEFT rotation
-    #   5  rotating BACK to center -- wait
-    #   6  decide: trapped -> ESCAPE_BACKWARD, otherwise pick side -> RECENTER
+    # Scans left then right. After the 180° swing to the right, the bot is
+    # already facing 90° RIGHT of its original heading. Instead of rotating
+    # back to center and then turning again, we exploit the current heading:
     #
-    # The cost of all this phase bookkeeping is that the main loop keeps
-    # ticking, the camera buffer drains, and the FPS counter stays high.
+    #   Phase 0: start 90° LEFT rotation
+    #   Phase 1: wait + settle
+    #   Phase 2: read LEFT sonar, start 180° RIGHT rotation
+    #   Phase 3: wait + settle
+    #   Phase 4: read RIGHT sonar, DECIDE:
+    #       RIGHT wins → already facing right, enter AVOIDING drive loop
+    #       LEFT wins  → start 180° flip left → Phase 5
+    #       TRAPPED    → start 90° more right (→ backward) → Phase 7
+    #   Phase 5: wait for 180° flip → enter AVOIDING drive loop
+    #   Phase 7: wait for 90° → enter ESCAPE_BACKWARD at drive phase
+    #
+    # Saves a full 90° rotation (~0.7s) vs the old return-to-center approach.
     # -----------------------------------------------------------------------
 
     def _run_scanning_obstacle(self, target):
@@ -1062,7 +1061,7 @@ class ColorBlockTracker:
             if elapsed >= SCAN_SETTLE_TIME:
                 self.scan_left_dist = self._read_sonar_avg()
                 dbg(f'[SCAN] Left: {self.scan_left_dist:.1f}cm')
-                self._start_rotation(+1)
+                self._start_rotation(+1)    # swing 180° RIGHT
                 self.scan_phase       = 3
                 self.scan_phase_start = time.time()
 
@@ -1077,51 +1076,59 @@ class ColorBlockTracker:
             if elapsed >= SCAN_SETTLE_TIME:
                 self.scan_right_dist = self._read_sonar_avg()
                 dbg(f'[SCAN] Right: {self.scan_right_dist:.1f}cm')
-                self._start_rotation(-1)
-                self.scan_phase       = 5
-                self.scan_phase_start = time.time()
+                self._scan_decide()
 
         elif self.scan_phase == 5:
+            # LEFT won: waiting for 180° flip to face left
+            if elapsed >= self._rotation_duration_for(2 * SCAN_ROTATE_ANGLE_DEG):
+                self._stop()
+                self.dr.rotate(-1, self._rotation_duration_for(2 * SCAN_ROTATE_ANGLE_DEG))
+                self._enter_avoiding_drive()
+
+        elif self.scan_phase == 7:
+            # TRAPPED: waiting for 90° more right to face backward
             if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
                 self._stop()
-                self.dr.rotate(-1, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
-                self._scan_decide_next()
+                self.dr.rotate(+1, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.escape_phase       = 2
+                self.escape_phase_start = time.time()
+                self._set_state(ESCAPE_BACKWARD)
 
-    def _scan_decide_next(self):
-        """
-        After all sonar samples are in and the body is back to center, decide:
-          - both sides blocked -> ESCAPE_BACKWARD
-          - otherwise pick the clearer side, go to AVOIDING
-        """
+    def _scan_decide(self):
+        """Called at end of phase 4. Bot faces 90° RIGHT of original heading."""
         left  = self.scan_left_dist
         right = self.scan_right_dist
 
-        # --- Trapped check ---
+        # --- Trapped: both sides blocked ---
         if left <= TRAPPED_THRESHOLD_CM and right <= TRAPPED_THRESHOLD_CM:
-            print(f'[TRAPPED] L={left:.0f}cm R={right:.0f}cm '
-                  f'(both <={TRAPPED_THRESHOLD_CM:.0f}cm) -- escaping backward')
-            self.escape_phase       = 0
-            self.escape_phase_start = time.time()
-            self._set_state(ESCAPE_BACKWARD)
+            print(f'[TRAPPED] L={left:.0f}cm R={right:.0f}cm -- escaping')
+            self._start_rotation(+1)   # 90° more right → facing backward
+            self.scan_phase       = 7
+            self.scan_phase_start = time.time()
             return
 
-        # --- Pick the side with more clearance ---
+        # --- Pick the clearer side ---
         TIE_THRESHOLD_CM = 5.0
-        TIE_DEFAULT      = +1   # +1 = right, -1 = left
         diff = abs(left - right)
 
-        if diff < TIE_THRESHOLD_CM:
-            self.avoid_direction = TIE_DEFAULT
-            side = 'RIGHT' if TIE_DEFAULT > 0 else 'LEFT'
-            print(f'[SCAN] L={left:.0f}cm R={right:.0f}cm (tie, defaulting {side})')
-        elif left > right:
-            self.avoid_direction = -1
-            print(f'[SCAN] L={left:.0f}cm R={right:.0f}cm  -> LEFT')
-        else:
+        if diff < TIE_THRESHOLD_CM or right >= left:
+            # RIGHT wins (or tie). Already facing right → drive immediately.
             self.avoid_direction = +1
-            print(f'[SCAN] L={left:.0f}cm R={right:.0f}cm  -> RIGHT')
+            tag = 'RIGHT' if diff >= TIE_THRESHOLD_CM else 'RIGHT (tie)'
+            print(f'[SCAN] L={left:.0f}cm R={right:.0f}cm  -> {tag}')
+            self._enter_avoiding_drive()
+        else:
+            # LEFT wins. Flip 180° from current right-facing heading.
+            self.avoid_direction = -1
+            print(f'[SCAN] L={left:.0f}cm R={right:.0f}cm  -> LEFT (flipping)')
+            self._start_rotation(-1)
+            self.scan_phase       = 5
+            self.scan_phase_start = time.time()
 
-        self.avoid_phase      = 0
+    def _enter_avoiding_drive(self):
+        """Enter AVOIDING at phase 2 (forward drive loop), skipping the
+        initial rotation since the scan already left us facing the right way."""
+        self.avoid_phase      = 2
         self.last_action_time = time.time()
         self._set_state(AVOIDING)
 
