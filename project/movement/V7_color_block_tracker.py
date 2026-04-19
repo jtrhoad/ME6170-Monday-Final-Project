@@ -14,8 +14,9 @@ STATE MACHINE:
   CONFIRMING  -- Centered; ask user Y/N before approaching.
   APPROACHING -- Confirmed; drive forward (PID yaw) toward target.
   SCANNING_OBSTACLE -- Obstacle in path; rotate body L/R to find clearer side.
-  AVOIDING    -- Rotate 90 deg toward clearer side, drive forward past obstacle,
-                 then return to SEARCHING for visual reacquisition.
+  AVOIDING    -- Wall-following: rotate toward clearer side, drive forward,
+                 peek sideways to check if wall has ended, loop until clear,
+                 then strafe briefly past the corner and return to SEARCHING.
   ESCAPE_BACKWARD -- Trapped (both sides blocked); rotate 180 and drive away.
   ARRIVED     -- Within ARRIVAL_DISTANCE_CM of target; victory dance.
 
@@ -189,10 +190,14 @@ YAW_OUTPUT_LIMIT   = 35
 YAW_INTEGRAL_LIMIT = 200
 YAW_DEADBAND_PX    = 8
 
-# --- Obstacle Avoidance ---
+# --- Obstacle Avoidance (wall-following) ---
 OBSTACLE_DISTANCE_CM   = 20.0
-AVOID_FORWARD_DURATION = 1.0
+AVOID_FORWARD_DURATION = 1.0     # seconds of forward travel between peeks
 AVOID_SPEED            = 50
+WALL_FOLLOW_TOLERANCE  = 5.0     # ±cm: peek reading within this range of the
+                                 # original obstacle distance = "wall still there"
+CORNER_CLEAR_SPEED     = 60      # motor speed for the end-of-wall strafe
+CORNER_CLEAR_DURATION  = 0.3     # seconds of strafe to clear the corner
 
 # --- Obstacle Scanning (rotate body, read sonar both sides) ---
 SCAN_ROTATE_ANGLE_DEG  = 90.0
@@ -619,6 +624,7 @@ class ColorBlockTracker:
         self.search_steps     = 0
         self.avoid_phase      = 0
         self.avoid_direction  = +1   # +1 = rotate right, -1 = rotate left
+        self.wall_ref_dist   = 0.0  # original obstacle distance for wall-peek comparison
         self.last_action_time = time.time()
 
         # Yaw correction PID for APPROACHING (keeps target horizontally centered)
@@ -1001,6 +1007,7 @@ class ColorBlockTracker:
             print(f'[OBSTACLE] {dist:.1f}cm -- scanning sides')
             self.scan_phase       = 0
             self.scan_phase_start = time.time()
+            self.wall_ref_dist    = dist   # save for wall-peek comparisons
             self._set_state(SCANNING_OBSTACLE)
             return
 
@@ -1181,59 +1188,170 @@ class ColorBlockTracker:
                 self._set_state(SEARCHING)
 
     # -----------------------------------------------------------------------
-    # AVOIDING  (non-blocking, phased: rotate toward clearer side + drive forward)
-    # Instead of strafing (which risks clipping side obstacles), we:
-    #   Phase 0: rotate 90 deg toward the clearer side
-    #   Phase 1: drive forward (now physically perpendicular to the obstacle)
-    # After driving, return to SEARCHING so the bot spins to re-find the target.
+    # AVOIDING  (non-blocking, phased: wall-following with peek-and-clear)
     #
-    # WHY NOT STRAFE?
-    #   Strafing moves the bot sideways while facing the same direction. If
-    #   there's an obstacle just past the end of the front obstacle, the bot
-    #   strafes directly into it. Rotating first and then driving forward
-    #   means sonar is pointed along the direction of travel, so any new
-    #   obstacles trigger a fresh scan cycle automatically on the next
-    #   APPROACHING pass.
+    # Navigates around obstacles as if the bot is in a maze. After the scan
+    # picks a clearer side, the bot:
+    #   1. Rotates 90° toward that side.
+    #   2. Drives forward for AVOID_FORWARD_DURATION.
+    #   3. Stops and peeks 90° back toward the wall.
+    #   4. If the wall is still there (sonar within ±WALL_FOLLOW_TOLERANCE of
+    #      original distance), rotates back and repeats from step 2.
+    #   5. If the wall has ended (sonar reads much farther), does a brief
+    #      strafe toward the wall side to clear the corner, then SEARCHING.
+    #   6. If sonar reads much CLOSER than the reference, a new perpendicular
+    #      wall is closing in — go back to SCANNING_OBSTACLE to re-evaluate.
+    #   7. During forward segments, sonar checks every frame for new obstacles
+    #      ahead. If one appears, abort and go to SCANNING_OBSTACLE.
+    #
+    # Phases:
+    #   0  start 90° rotation toward clearer side
+    #   1  wait for rotation
+    #   2  drive forward (sonar checking ahead each frame)
+    #   3  start 90° peek rotation toward wall
+    #   4  wait for peek rotation
+    #   5  settle + read sonar, decide
+    #   6  start 90° return rotation (back to travel direction)
+    #   7  wait for return rotation → loop to phase 2
+    #   8  start corner-clearing strafe
+    #   9  wait for strafe → SEARCHING
     # -----------------------------------------------------------------------
 
     def _run_avoiding(self, target):
         elapsed = self._elapsed()
-        d       = self.avoid_direction   # +1 = right (CW), -1 = left (CCW)
+        d = self.avoid_direction       # +1 = right (CW), -1 = left (CCW)
+        peek_dir = -d                  # peek toward the wall (opposite side)
 
+        # --- Phase 0: start initial 90° rotation toward clearer side ---
         if self.avoid_phase == 0:
-            # Rotate 90 deg toward the clearer side
-            if elapsed < self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
-                self._start_rotation(d)
-            else:
+            self._start_rotation(d)
+            self.avoid_phase      = 1
+            self.last_action_time = time.time()
+
+        # --- Phase 1: wait for initial rotation ---
+        elif self.avoid_phase == 1:
+            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
                 self._stop()
                 self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
-                print(f'[AVOID] Rotated {SCAN_ROTATE_ANGLE_DEG:.0f} deg '
-                      f'{"RIGHT" if d > 0 else "LEFT"}')
-                self.avoid_phase      = 1
+                print(f'[AVOID] Rotated {SCAN_ROTATE_ANGLE_DEG:.0f}° '
+                      f'{"RIGHT" if d > 0 else "LEFT"} -- driving forward')
+                self.avoid_phase      = 2
                 self.last_action_time = time.time()
 
-        elif self.avoid_phase == 1:
-            # Drive forward (now perpendicular to the original obstacle)
-            # Check sonar each frame: if a NEW obstacle appears, abort early
-            # and hand off to SEARCHING so it can rescan from the new position.
+        # --- Phase 2: drive forward, sonar checking ahead ---
+        elif self.avoid_phase == 2:
             dist = self._read_sonar()
             if dist < OBSTACLE_DISTANCE_CM and dist > 0:
-                print(f'[AVOID] New obstacle at {dist:.1f}cm during forward '
-                      f'drive -- stopping early')
+                print(f'[AVOID] New obstacle ahead at {dist:.1f}cm '
+                      f'-- re-scanning')
                 self._stop()
-                self.dr.move_forward(elapsed)
-                self.dr.reset()
-                self._set_state(SEARCHING)
+                self.scan_phase       = 0
+                self.scan_phase_start = time.time()
+                self.wall_ref_dist    = dist
+                self._set_state(SCANNING_OBSTACLE)
                 return
 
             if elapsed < AVOID_FORWARD_DURATION:
                 self._drive(AVOID_SPEED, AVOID_SPEED,
                             AVOID_SPEED, AVOID_SPEED)
             else:
+                self._stop()
                 self.dr.move_forward(AVOID_FORWARD_DURATION)
+                dbg(f'[AVOID] Forward segment done -- peeking toward wall')
+                self.avoid_phase      = 3
+                self.last_action_time = time.time()
+
+        # --- Phase 3: start peek rotation toward wall ---
+        elif self.avoid_phase == 3:
+            self._start_rotation(peek_dir)
+            self.avoid_phase      = 4
+            self.last_action_time = time.time()
+
+        # --- Phase 4: wait for peek rotation ---
+        elif self.avoid_phase == 4:
+            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
+                self._stop()
+                self.dr.rotate(peek_dir,
+                               self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.avoid_phase      = 5
+                self.last_action_time = time.time()
+
+        # --- Phase 5: settle + read sonar, decide ---
+        elif self.avoid_phase == 5:
+            if elapsed >= SCAN_SETTLE_TIME:
+                peek_dist = self._read_sonar_avg()
+                ref       = self.wall_ref_dist
+                lo        = ref - WALL_FOLLOW_TOLERANCE
+                hi        = ref + WALL_FOLLOW_TOLERANCE
+
+                if lo <= peek_dist <= hi:
+                    # Wall still there — rotate back and keep going
+                    print(f'[AVOID] Wall still there (peek={peek_dist:.0f}cm, '
+                          f'ref={ref:.0f}±{WALL_FOLLOW_TOLERANCE:.0f}) '
+                          f'-- continuing forward')
+                    self.avoid_phase      = 6
+                    self.last_action_time = time.time()
+
+                elif peek_dist > hi:
+                    # Wall ended — strafe to clear corner
+                    print(f'[AVOID] Wall ended (peek={peek_dist:.0f}cm, '
+                          f'ref was {ref:.0f}cm) -- clearing corner')
+                    # First rotate back to travel direction before strafing
+                    self.avoid_phase      = 8
+                    self.last_action_time = time.time()
+
+                else:
+                    # Reading much closer than expected — new wall closing in
+                    # (maze corner). Re-scan from this position.
+                    print(f'[AVOID] New wall detected (peek={peek_dist:.0f}cm, '
+                          f'ref was {ref:.0f}cm) -- re-scanning')
+                    self._stop()
+                    self.scan_phase       = 0
+                    self.scan_phase_start = time.time()
+                    self.wall_ref_dist    = peek_dist
+                    self._set_state(SCANNING_OBSTACLE)
+                    return
+
+        # --- Phase 6: start rotation back to travel direction ---
+        elif self.avoid_phase == 6:
+            self._start_rotation(d)  # rotate back away from wall
+            self.avoid_phase      = 7
+            self.last_action_time = time.time()
+
+        # --- Phase 7: wait for return rotation → loop to forward ---
+        elif self.avoid_phase == 7:
+            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
+                self._stop()
+                self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.avoid_phase      = 2
+                self.last_action_time = time.time()
+
+        # --- Phase 8: rotate back to travel dir, then start corner strafe ---
+        elif self.avoid_phase == 8:
+            # Rotate back to travel direction first
+            self._start_rotation(d)
+            self.avoid_phase      = 9
+            self.last_action_time = time.time()
+
+        # --- Phase 9: wait for rotation, then start strafe ---
+        elif self.avoid_phase == 9:
+            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
+                self._stop()
+                self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.avoid_phase      = 10
+                self.last_action_time = time.time()
+
+        # --- Phase 10: strafe toward wall side to clear corner ---
+        elif self.avoid_phase == 10:
+            if elapsed < CORNER_CLEAR_DURATION:
+                # Strafe toward where the wall was (peek_dir side)
+                s = CORNER_CLEAR_SPEED
+                self._drive( s * peek_dir, -s * peek_dir,
+                            -s * peek_dir,  s * peek_dir)
+            else:
                 self._stop()
                 self.dr.reset()
-                print('[AVOID] Forward drive complete -- returning to SEARCHING')
+                print('[AVOID] Corner cleared -- returning to SEARCHING')
                 self._set_state(SEARCHING)
 
     # -----------------------------------------------------------------------
