@@ -116,109 +116,90 @@ class ThreadedCamera:
         self.cap.release()
 
 # ===========================================================================
-# CONFIGURATION
+# TUNING PARAMETERS
+# All values you're likely to adjust during testing are here. Grouped by
+# function. Change values here -- they propagate to the rest of the code.
 # ===========================================================================
 
-# --- Camera ---
-CAMERA_INDEX = 0
-FRAME_WIDTH  = 640
-FRAME_HEIGHT = 480
-TARGET_FPS   = 60                # USB cameras have a hard ceiling. Setting
-                                 # this to 600 won't make the camera go faster
-                                 # than its physical mode supports -- it caps
-                                 # to whatever the sensor offers <=60.
+# ---- Camera ----
+CAMERA_INDEX = 0                   # /dev/videoN index (0 = default)
+FRAME_WIDTH  = 640                 # capture resolution width in pixels
+FRAME_HEIGHT = 480                 # capture resolution height in pixels
+TARGET_FPS   = 60                  # requested FPS (capped by camera hardware)
 
-# --- Servo ---
-SERVO_PAN         = 1
-SERVO_TILT        = 2
-PAN_CENTER        = 72
-TILT_CENTER       = 25
-PAN_MIN,  PAN_MAX  =  5, 175    # Hard angle limits -- never exceeded
-TILT_MIN, TILT_MAX =  0,  95
+# ---- Servo (pan/tilt camera mount) ----
+SERVO_PAN         = 1              # servo channel for horizontal rotation
+SERVO_TILT        = 2              # servo channel for vertical rotation
+PAN_CENTER        = 72             # pan angle that points straight ahead
+TILT_CENTER       = 25             # tilt angle that points level
+PAN_MIN,  PAN_MAX  =  5, 175      # hard pan angle limits (never exceeded)
+TILT_MIN, TILT_MAX =  0,  95      # hard tilt angle limits
+PAN_GAIN     = 0.03                # tilt servo degrees per pixel of error
+TILT_GAIN    = 0.03                # (lower = smoother, higher = faster)
+MAX_STEP_DEG = 2.0                 # max servo movement per frame (prevents lurching)
+DEADBAND_PX  = 5                   # ignore errors smaller than this (stops jitter)
 
-# Proportional gain: degrees of servo movement per pixel of error.
-# Lower = smoother but slower. Higher = faster but more jitter.
-PAN_GAIN     = 0.03
-TILT_GAIN    = 0.03
+# ---- Body Centering (TRACKING state) ----
+TRACK_CENTERED_PX      = 25       # both axes must be within this many px of
+                                   # frame center before advancing to CONFIRMING
+MIN_TRACK_ROTATE_SPEED = 25       # minimum motor PWM that produces physical
+                                   # rotation (below this, motors stall)
 
-# Max servo movement per frame -- prevents lurching on large sudden errors.
-MAX_STEP_DEG = 2.0
+# ---- Color Detection ----
+MIN_CONTOUR_AREA = 1500            # minimum blob area in px² (filters noise)
 
-# Ignore offsets smaller than this -- stops jitter when nearly centered.
-DEADBAND_PX  = 5
+# ---- Blacklist (rejected target exclusion) ----
+BLACKLIST_DURATION        = 5.0    # seconds a rejected target stays blocked
+BLACKLIST_RADIUS_PX       = 100    # pixel radius of the exclusion zone
+BLACKLIST_TRACK_RADIUS_PX = 140    # max px jump per frame for sticky tracking
 
-# How close (in pixels) the target must be to frame center on BOTH axes
-# before TRACKING declares the bot centered and advances to CONFIRMING.
-# Wider than DEADBAND_PX because the chassis is much coarser than the
-# camera servos -- gear backlash and motor deadzone make sub-10px body
-# centering effectively impossible. 25 px is roughly +/- 4% of frame width.
-TRACK_CENTERED_PX = 25
+# ---- Approach (driving toward confirmed target) ----
+APPROACH_SPEED      = 35           # motor PWM while approaching target
+ARRIVAL_DISTANCE_CM = 20.0         # sonar distance that triggers ARRIVED state
+TARGET_LOCK_PX      = 80           # suppress obstacle check when target is
+                                   # within this many px of frame center
+ARRIVAL_MIN_AREA    = 0.08         # target must fill this fraction of frame
+                                   # to confirm arrival (prevents false triggers)
 
-# Minimum motor command magnitude that actually produces movement.
-# Below this, the wheels stall instead of rotating. Used as a floor for
-# the tracking-yaw PID output so that tiny corrections still move the bot.
-MIN_TRACK_ROTATE_SPEED = 25
+# ---- Yaw PID (keeps target centered while driving forward) ----
+YAW_KP             = 0.15         # proportional gain (main correction force)
+YAW_KI             = 0.01         # integral gain (eliminates steady-state drift)
+YAW_KD             = 0.05         # derivative gain (damps oscillation)
+YAW_OUTPUT_LIMIT   = 35           # max wheel-speed bias from PID output
+YAW_INTEGRAL_LIMIT = 200          # anti-windup cap on integral term
+YAW_DEADBAND_PX    = 8            # ignore errors below this (prevents twitch)
 
-# --- Detection ---
-MIN_CONTOUR_AREA = 1500          # px^2 -- filters noise and far-away blobs
+# ---- Obstacle Detection ----
+OBSTACLE_DISTANCE_CM = 20.0       # sonar distance that triggers obstacle scan
 
-# --- Blacklist (sticky -- follows the rejected object as the bot rotates) ---
-# When a target is rejected, the rejected contour's center is recorded as a
-# blacklist entry. Each frame, find_color_block tries to snap each entry to
-# the nearest qualifying contour center within BLACKLIST_TRACK_RADIUS_PX --
-# this lets the entry "ride" the rejected blob as it slides across the frame
-# during rotation. Contours within BLACKLIST_RADIUS_PX of a (now-updated)
-# entry are excluded from selection.
-BLACKLIST_DURATION       = 5.0       # seconds the region stays blocked
-BLACKLIST_RADIUS_PX      = 100       # pixel radius of the exclusion zone
-BLACKLIST_TRACK_RADIUS_PX = 140      # max per-frame jump for entry-tracking
+# ---- Obstacle Scanning (rotate body L/R, read sonar) ----
+SCAN_ROTATE_ANGLE_DEG  = 90.0     # degrees to rotate each direction during scan
+SCAN_SETTLE_TIME       = 0.25     # seconds to wait after rotation before reading
+SCAN_SAMPLES           = 3        # sonar samples to average per side
 
-# --- Approach ---
-APPROACH_SPEED      = 35
-ARRIVAL_DISTANCE_CM = 20.0
-TARGET_LOCK_PX      = 80         # suppress obstacle check when target is this
-                                 # close to frame-center horizontally
-ARRIVAL_MIN_AREA    = 0.08       # target must fill this fraction of frame to
-                                 # count as arrived (prevents false arrival on
-                                 # unrelated objects crossing the sonar cone)
+# ---- Rotation Calibration ----
+ROTATION_STARTUP_COMP_S = 0.15    # extra seconds added to the FIRST rotation
+                                   # from a dead stop to compensate for motor
+                                   # ramp-up lag (subsequent rotations skip this)
 
-# --- Yaw PID (keeps target horizontally centered while driving forward) ---
-YAW_KP             = 0.15
-YAW_KI             = 0.01
-YAW_KD             = 0.05
-YAW_OUTPUT_LIMIT   = 35
-YAW_INTEGRAL_LIMIT = 200
-YAW_DEADBAND_PX    = 8
+# ---- Wall-Following (AVOIDING state) ----
+AVOID_FORWARD_DURATION = 1.0      # seconds of forward travel between wall peeks
+AVOID_SPEED            = 50       # motor PWM during avoidance forward drive
+WALL_FOLLOW_TOLERANCE  = 5.0      # ±cm: wall is "still there" if peek reads
+                                   # within this range of the original distance
+CORNER_CLEAR_SPEED     = 60       # motor PWM for end-of-wall corner strafe
+CORNER_CLEAR_DURATION  = 0.3      # seconds of strafe to clear the corner edge
 
-# --- Obstacle Avoidance (wall-following) ---
-OBSTACLE_DISTANCE_CM   = 20.0
-AVOID_FORWARD_DURATION = 1.0     # seconds of forward travel between peeks
-AVOID_SPEED            = 50
-WALL_FOLLOW_TOLERANCE  = 5.0     # ±cm: peek reading within this range of the
-                                 # original obstacle distance = "wall still there"
-CORNER_CLEAR_SPEED     = 60      # motor speed for the end-of-wall strafe
-CORNER_CLEAR_DURATION  = 0.3     # seconds of strafe to clear the corner
+# ---- Search (rotating to find target) ----
+SEARCH_ROTATE_SPEED = 40          # motor PWM for in-place rotation (also used
+                                   # by scan, dance, and all non-PID rotations)
+SEARCH_ROTATE_STEP  = 0.10        # seconds per rotation step between checks
+SEARCH_MAX_STEPS    = 35          # max steps before nudging forward and retrying
 
-# --- Obstacle Scanning (rotate body, read sonar both sides) ---
-SCAN_ROTATE_ANGLE_DEG  = 90.0
-SCAN_SETTLE_TIME       = 0.25
-SCAN_SAMPLES           = 3
-
-# Motors take ~80-100ms to ramp from 0 to full speed. For short rotations
-# (0.7s) this eats ~14% of the duration and the bot under-rotates by ~20°.
-# For long rotations (1.4s) the same lag is only ~7% and barely noticeable.
-# This constant adds a fixed time to every rotation to compensate.
-ROTATION_STARTUP_COMP_S = 0.15
-
-# --- Search ---
-SEARCH_ROTATE_SPEED = 40
-SEARCH_ROTATE_STEP  = 0.10
-SEARCH_MAX_STEPS    = 35
-
-# --- Dead Reckoning (calibrate on actual surface with dr_calibration.py) ---
-# DEG_PER_SECOND_ROTATE: 252 deg in 2.0 s at speed 40 -> 126 deg/sec.
-DEG_PER_SECOND_ROTATE = 126.0
-CM_PER_SECOND_FORWARD = 35.25
+# ---- Dead Reckoning (calibrated on actual surface) ----
+DEG_PER_SECOND_ROTATE = 126.0     # rotation rate at SEARCH_ROTATE_SPEED
+                                   # (measured: 252° in 2.0s at speed 40)
+CM_PER_SECOND_FORWARD = 35.25     # forward speed at APPROACH_SPEED
 
 # ===========================================================================
 # COLOR REGISTRY
@@ -753,10 +734,13 @@ class ColorBlockTracker:
                     -speed * direction, -speed * direction)
 
     @staticmethod
-    def _rotation_duration_for(degrees):
-        """Seconds at SEARCH_ROTATE_SPEED to rotate the given angle,
-        including a small startup compensation for motor ramp-up lag."""
-        return degrees / DEG_PER_SECOND_ROTATE + ROTATION_STARTUP_COMP_S
+    def _rotation_duration_for(degrees, from_stop=False):
+        """Seconds at SEARCH_ROTATE_SPEED to rotate the given angle.
+        from_stop=True adds startup compensation for motor ramp-up lag —
+        only needed on the first rotation from a true dead stop. Subsequent
+        rotations (motors still warm, residual momentum) don't need it."""
+        base = degrees / DEG_PER_SECOND_ROTATE
+        return base + ROTATION_STARTUP_COMP_S if from_stop else base
 
     def _set_led_for_state(self, state):
         """
@@ -1043,9 +1027,10 @@ class ColorBlockTracker:
             self.scan_phase_start = time.time()
 
         elif self.scan_phase == 1:
-            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
+            dur = self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG, from_stop=True)
+            if elapsed >= dur:
                 self._stop()
-                self.dr.rotate(-1, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.dr.rotate(-1, dur)
                 self.scan_phase       = 2
                 self.scan_phase_start = time.time()
             else:
@@ -1211,9 +1196,10 @@ class ColorBlockTracker:
 
         # --- Phase 1: wait for initial rotation ---
         elif self.avoid_phase == 1:
-            if elapsed >= self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG):
+            dur = self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG, from_stop=True)
+            if elapsed >= dur:
                 self._stop()
-                self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
+                self.dr.rotate(d, dur)
                 print(f'[AVOID] Rotated {SCAN_ROTATE_ANGLE_DEG:.0f}° '
                       f'{"RIGHT" if d > 0 else "LEFT"} -- driving forward')
                 self.avoid_phase      = 2
