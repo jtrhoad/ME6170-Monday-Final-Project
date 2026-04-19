@@ -644,11 +644,6 @@ class ColorBlockTracker:
         # Contours near a live entry are skipped in find_color_block()
         self.blacklist = []
 
-        # Cache of last motor command per wheel -- _drive skips I2C writes
-        # for unchanged values to reduce bus traffic and shave loop time.
-        # Sentinel "None" means "force the next write."
-        self._last_motor_cmd = [None, None, None, None]
-
         self.robot.Ctrl_Ulatist_Switch(1)   # Power on ultrasonic sensor
         # The Yahboom sonar takes a few hundred ms after enable before reads
         # return real values. Without this delay the first SCANNING_OBSTACLE
@@ -679,26 +674,21 @@ class ColorBlockTracker:
           2 = rear-left    3 = rear-right
         Positive = forward, negative = backward for each wheel.
 
-        OPTIMIZATION: skip the I2C write if the new command equals the last
-        one we sent to that motor. Saves ~1-2 ms per frame in steady-state
-        driving (every frame in APPROACHING the four motor commands are
-        identical, so we'd be re-sending the same value unnecessarily).
-        Also reduces I2C bus contention which mildly helps the wheel-lockup
-        symptom by leaving more bandwidth for retries on the actual changes.
+        All 4 commands are sent every call — no caching. The Yahboom I2C
+        bus silently drops writes occasionally (bare except in write_array),
+        and the old cache meant a dropped write was never retried. At 4
+        writes × ~1ms each = ~4ms per call, the cost is acceptable for the
+        reliability gain.
         """
-        new = (fl, fr, rl, rr)
-        for i, val in enumerate(new):
-            if self._last_motor_cmd[i] != val:
-                self.robot.Ctrl_Muto(i, val)
-                self._last_motor_cmd[i] = val
+        self.robot.Ctrl_Muto(0, fl)
+        self.robot.Ctrl_Muto(1, fr)
+        self.robot.Ctrl_Muto(2, rl)
+        self.robot.Ctrl_Muto(3, rr)
 
     def _stop(self):
-        """Stop all four wheels. Bypasses the cache so a stop always reaches
-        the hardware even if the prior command was already 0 -- safety wins
-        over the small I2C cost."""
+        """Stop all four wheels."""
         for i in range(4):
             self.robot.Ctrl_Muto(i, 0)
-            self._last_motor_cmd[i] = 0
 
     def _read_sonar(self):
         """
@@ -1044,6 +1034,8 @@ class ColorBlockTracker:
                 self.dr.rotate(-1, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
                 self.scan_phase       = 2
                 self.scan_phase_start = time.time()
+            else:
+                self._start_rotation(-1)   # re-send each frame
 
         elif self.scan_phase == 2:
             if elapsed >= SCAN_SETTLE_TIME:
@@ -1059,6 +1051,8 @@ class ColorBlockTracker:
                 self.dr.rotate(+1, self._rotation_duration_for(2 * SCAN_ROTATE_ANGLE_DEG))
                 self.scan_phase       = 4
                 self.scan_phase_start = time.time()
+            else:
+                self._start_rotation(+1)   # re-send each frame
 
         elif self.scan_phase == 4:
             if elapsed >= SCAN_SETTLE_TIME:
@@ -1072,6 +1066,8 @@ class ColorBlockTracker:
                 self._stop()
                 self.dr.rotate(-1, self._rotation_duration_for(2 * SCAN_ROTATE_ANGLE_DEG))
                 self._enter_avoiding_drive()
+            else:
+                self._start_rotation(-1)   # re-send each frame
 
     def _scan_decide(self):
         """
@@ -1208,6 +1204,8 @@ class ColorBlockTracker:
                       f'{"RIGHT" if d > 0 else "LEFT"} -- driving forward')
                 self.avoid_phase      = 2
                 self.last_action_time = time.time()
+            else:
+                self._start_rotation(d)   # re-send each frame
 
         # --- Phase 2: drive forward, sonar checking ahead ---
         elif self.avoid_phase == 2:
@@ -1247,6 +1245,8 @@ class ColorBlockTracker:
                                self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
                 self.avoid_phase      = 5
                 self.last_action_time = time.time()
+            else:
+                self._start_rotation(peek_dir)   # re-send each frame
 
         # --- Phase 5: settle + read sonar, decide ---
         elif self.avoid_phase == 5:
@@ -1287,7 +1287,7 @@ class ColorBlockTracker:
 
         # --- Phase 6: start rotation back to travel direction ---
         elif self.avoid_phase == 6:
-            self._start_rotation(d)  # rotate back away from wall
+            self._start_rotation(d)
             self.avoid_phase      = 7
             self.last_action_time = time.time()
 
@@ -1298,10 +1298,11 @@ class ColorBlockTracker:
                 self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
                 self.avoid_phase      = 2
                 self.last_action_time = time.time()
+            else:
+                self._start_rotation(d)   # re-send each frame
 
         # --- Phase 8: rotate back to travel dir, then start corner strafe ---
         elif self.avoid_phase == 8:
-            # Rotate back to travel direction first
             self._start_rotation(d)
             self.avoid_phase      = 9
             self.last_action_time = time.time()
@@ -1313,6 +1314,8 @@ class ColorBlockTracker:
                 self.dr.rotate(d, self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG))
                 self.avoid_phase      = 10
                 self.last_action_time = time.time()
+            else:
+                self._start_rotation(d)   # re-send each frame
 
         # --- Phase 10: strafe toward wall side to clear corner ---
         elif self.avoid_phase == 10:
