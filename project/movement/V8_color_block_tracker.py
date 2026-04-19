@@ -173,7 +173,7 @@ YAW_DEADBAND_PX    = 8            # ignore errors below this (prevents twitch)
 OBSTACLE_DISTANCE_CM = 20.0       # sonar distance that triggers obstacle scan
 
 # ---- Obstacle Scanning (rotate body L/R, read sonar) ----
-SCAN_ROTATE_ANGLE_DEG  = 85.0     # degrees to rotate each direction during scan
+SCAN_ROTATE_ANGLE_DEG  = 90.0     # degrees to rotate each direction during scan
 SCAN_SETTLE_TIME       = 0.25     # seconds to wait after rotation before reading
 SCAN_SAMPLES           = 3        # sonar samples to average per side
 
@@ -676,7 +676,12 @@ class ColorBlockTracker:
         self.robot.Ctrl_Muto(3, rr)
 
     def _stop(self):
-        """Stop all four wheels."""
+        """Stop all four wheels. Sends the command twice with a small gap
+        to maximize the chance that every motor actually receives the zero,
+        even if one I2C write gets dropped."""
+        for i in range(4):
+            self.robot.Ctrl_Muto(i, 0)
+        time.sleep(0.005)
         for i in range(4):
             self.robot.Ctrl_Muto(i, 0)
 
@@ -1022,9 +1027,15 @@ class ColorBlockTracker:
         elapsed = time.time() - self.scan_phase_start
 
         if self.scan_phase == 0:
-            self._start_rotation(-1)   # rotate LEFT
-            self.scan_phase       = 1
-            self.scan_phase_start = time.time()
+            # Settle phase: ensure all motors are fully stopped before
+            # starting any rotation. This prevents residual commands from
+            # the previous state (forward drive, peek rotation) from
+            # leaking into the scan and causing drift.
+            self._stop()
+            if elapsed >= SCAN_SETTLE_TIME:
+                self._start_rotation(-1)   # rotate LEFT
+                self.scan_phase       = 1
+                self.scan_phase_start = time.time()
 
         elif self.scan_phase == 1:
             dur = self._rotation_duration_for(SCAN_ROTATE_ANGLE_DEG, from_stop=True)
