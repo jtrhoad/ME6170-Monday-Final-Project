@@ -183,7 +183,7 @@ ROTATION_STARTUP_COMP_S = 0.15    # extra seconds added to the FIRST rotation
                                    # ramp-up lag (subsequent rotations skip this)
 
 # ---- Wall-Following (AVOIDING state) ----
-AVOID_FORWARD_DURATION = 1.0      # seconds of forward travel between wall peeks
+AVOID_FORWARD_DURATION = 0.75      # seconds of forward travel between wall peeks
 AVOID_SPEED            = 50       # motor PWM during avoidance forward drive
 WALL_FOLLOW_TOLERANCE  = 5.0      # ±cm: wall is "still there" if peek reads
                                    # within this range of the original distance
