@@ -186,7 +186,7 @@ ROTATION_STARTUP_COMP_S = 0.15    # extra seconds added to the FIRST rotation
 AVOID_FORWARD_DURATION = 0.75      # seconds of forward travel between wall peeks
 AVOID_SPEED            = 50       # motor PWM during avoidance forward drive
                                    # within this range of the original distance
-CORNER_CLEAR_SPEED     = 60       # motor PWM for end-of-wall corner strafe
+CORNER_CLEAR_SPEED     = 100       # motor PWM for end-of-wall corner strafe
 CORNER_CLEAR_DURATION  = 0.3      # seconds of strafe to clear the corner edge
 
 # ---- Search (rotating to find target) ----
