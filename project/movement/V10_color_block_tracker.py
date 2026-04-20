@@ -209,11 +209,11 @@ CLAW_GPIO          = 19           # GPIO pin for the claw servo
 ARM_DOWN           = 180            # arm retracted / carrying position (degrees)
 ARM_UP             = 0          # arm fully extended (degrees)
 CLAW_CLOSED        = -10           # claw gripping block (negative = extra squeeze)
-CLAW_OPEN          = 60           # claw released / ready to receive (degrees)
+CLAW_OPEN          = 30           # claw released / ready to receive (degrees)
 ARM_MOVE_TIME      = 1.5          # seconds to wait after arm movement
 CLAW_MOVE_TIME     = 1.0          # seconds to wait after claw movement
-SERVO_STEP_DEG     = 5            # degrees per step for smooth servo movement
-SERVO_STEP_DELAY   = 0.03         # seconds between steps (lower = faster)
+SERVO_STEP_DEG     = 10            # degrees per step for smooth servo movement
+SERVO_STEP_DELAY   = 0.005         # seconds between steps (lower = faster)
 
 # ===========================================================================
 # COLOR REGISTRY
