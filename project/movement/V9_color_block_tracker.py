@@ -155,7 +155,7 @@ BLACKLIST_TRACK_RADIUS_PX = 140    # max px jump per frame for sticky tracking
 
 # ---- Approach (driving toward confirmed target) ----
 APPROACH_SPEED      = 35           # motor PWM while approaching target
-ARRIVAL_DISTANCE_CM = 20.0         # sonar distance that triggers ARRIVED state
+ARRIVAL_DISTANCE_CM = 25.0         # sonar distance that triggers ARRIVED state
 TARGET_LOCK_PX      = 80           # suppress obstacle check when target is
                                    # within this many px of frame center
 ARRIVAL_MIN_AREA    = 0.08         # target must fill this fraction of frame
@@ -170,10 +170,10 @@ YAW_INTEGRAL_LIMIT = 200          # anti-windup cap on integral term
 YAW_DEADBAND_PX    = 8            # ignore errors below this (prevents twitch)
 
 # ---- Obstacle Detection ----
-OBSTACLE_DISTANCE_CM = 20.0       # sonar distance that triggers obstacle scan
+OBSTACLE_DISTANCE_CM = 15.0       # sonar distance that triggers obstacle scan
 
 # ---- Obstacle Scanning (rotate body L/R, read sonar) ----
-SCAN_ROTATE_ANGLE_DEG  = 90     # degrees to rotate each direction during scan
+SCAN_ROTATE_ANGLE_DEG  = 80     # degrees to rotate each direction during scan
 SCAN_SETTLE_TIME       = 0.25     # seconds to wait after rotation before reading
 SCAN_SAMPLES           = 3        # sonar samples to average per side
 
