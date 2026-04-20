@@ -93,10 +93,10 @@ def test_rotation(robot):
 
     try:
         # Mecanum in-place clockwise: left wheels forward, right wheels backward
-        robot.Ctrl_Muto(0, SEARCH_ROTATE_SPEED)
-        robot.Ctrl_Muto(1, SEARCH_ROTATE_SPEED)
-        robot.Ctrl_Muto(2, -SEARCH_ROTATE_SPEED)
-        robot.Ctrl_Muto(3, -SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(0, -SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(1, -SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(2, SEARCH_ROTATE_SPEED)
+        robot.Ctrl_Muto(3, SEARCH_ROTATE_SPEED)
         time.sleep(TEST_DURATION)
     finally:
         robot.Ctrl_Car(0, 0, 0)
