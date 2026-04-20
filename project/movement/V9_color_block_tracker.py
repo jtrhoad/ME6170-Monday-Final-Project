@@ -173,7 +173,7 @@ YAW_DEADBAND_PX    = 8            # ignore errors below this (prevents twitch)
 OBSTACLE_DISTANCE_CM = 20.0       # sonar distance that triggers obstacle scan
 
 # ---- Obstacle Scanning (rotate body L/R, read sonar) ----
-SCAN_ROTATE_ANGLE_DEG  = 85     # degrees to rotate each direction during scan
+SCAN_ROTATE_ANGLE_DEG  = 80     # degrees to rotate each direction during scan
 SCAN_SETTLE_TIME       = 0.25     # seconds to wait after rotation before reading
 SCAN_SAMPLES           = 3        # sonar samples to average per side
 
