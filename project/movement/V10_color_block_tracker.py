@@ -185,7 +185,7 @@ ROTATION_STARTUP_COMP_S = 0.08    # extra seconds added to the FIRST rotation
                                    # ramp-up lag
 
 # ---- Wall-Following (AVOIDING state) ----
-AVOID_FORWARD_DURATION = 0.75      # seconds of forward travel between wall peeks
+AVOID_FORWARD_DURATION = 1      # seconds of forward travel between wall peeks
 AVOID_SPEED            = 50       # motor PWM during avoidance forward drive
                                    # within this range of the original distance
 CORNER_CLEAR_SPEED     = 100       # motor PWM for end-of-wall corner strafe
@@ -358,6 +358,16 @@ class ArmController:
         Extend arm, open claw (release block), close claw, retract arm.
         Called after victory dance at the target location.
         """
+        # Re-engage both servos at their current carrying position.
+        # After grab_sequence, both servos were detached (value=None) for the
+        # entire driving phase. Some servos don't re-engage cleanly from a
+        # long detach — setting them to their known position first "wakes up"
+        # the PWM before we command any actual movement.
+        print('[ARM] Re-engaging servos...')
+        self.arm.angle  = ARM_DOWN
+        self.claw.angle = CLAW_CLOSED
+        time.sleep(0.5)
+
         print('[ARM] Extending arm to place block...')
         self._move(self.arm, ARM_UP, ARM_MOVE_TIME)
 
