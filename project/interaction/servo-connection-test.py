@@ -25,10 +25,10 @@ try:
         servo2.angle = 90
         sleep(1)
 
-        print("180 degrees")
-        servo1.angle = 180
-        servo2.angle = 180
-        sleep(1)
+        #print("180 degrees")
+        #servo1.angle = 180
+        #servo2.angle = 180
+        #sleep(1)
 
 except KeyboardInterrupt:
     servo1.detach()
