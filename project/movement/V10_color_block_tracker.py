@@ -206,8 +206,8 @@ CM_PER_SECOND_FORWARD = 35.25     # forward speed at APPROACH_SPEED
 # ---- Arm & Claw (block grab/place mechanism) ----
 ARM_GPIO           = 18           # GPIO pin for the arm servo
 CLAW_GPIO          = 19           # GPIO pin for the claw servo
-ARM_DOWN           = 0            # arm retracted / carrying position (degrees)
-ARM_UP             = 160          # arm fully extended (degrees)
+ARM_DOWN           = 160            # arm retracted / carrying position (degrees)
+ARM_UP             = 0          # arm fully extended (degrees)
 CLAW_CLOSED        = 0            # claw gripping block (degrees)
 CLAW_OPEN          = 70           # claw released / ready to receive (degrees)
 ARM_MOVE_TIME      = 1.5          # seconds to wait after arm movement
