@@ -178,9 +178,10 @@ SCAN_SETTLE_TIME       = 0.25     # seconds to wait after rotation before readin
 SCAN_SAMPLES           = 3        # sonar samples to average per side
 
 # ---- Rotation Calibration ----
-ROTATION_STARTUP_COMP_S = 0.15    # extra seconds added to the FIRST rotation
+ROTATION_STARTUP_COMP_S = 0.08    # extra seconds added to the FIRST rotation
                                    # from a dead stop to compensate for motor
-                                   # ramp-up lag (subsequent rotations skip this)
+                                   # ramp-up lag (reduced from 0.15 after
+                                   # recalibration to 120 deg/sec)
 
 # ---- Wall-Following (AVOIDING state) ----
 AVOID_FORWARD_DURATION = 0.75      # seconds of forward travel between wall peeks
@@ -196,8 +197,9 @@ SEARCH_ROTATE_STEP  = 0.10        # seconds per rotation step between checks
 SEARCH_MAX_STEPS    = 35          # max steps before nudging forward and retrying
 
 # ---- Dead Reckoning (calibrated on actual surface) ----
-DEG_PER_SECOND_ROTATE = 126.0     # rotation rate at SEARCH_ROTATE_SPEED
-                                   # (measured: 252° in 2.0s at speed 40)
+DEG_PER_SECOND_ROTATE = 120.0     # rotation rate at SEARCH_ROTATE_SPEED
+                                   # (measured: CW=243° CCW=238° in 2.0s at
+                                   # speed 40 → avg 120.25, rounded to 120)
 CM_PER_SECOND_FORWARD = 35.25     # forward speed at APPROACH_SPEED
 
 # ===========================================================================
