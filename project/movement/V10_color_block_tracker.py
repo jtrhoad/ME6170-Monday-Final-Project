@@ -311,10 +311,21 @@ class ArmController:
         self.claw = AngularServo(CLAW_GPIO, min_angle=0, max_angle=180,
                                  min_pulse_width=0.0005, max_pulse_width=0.0025,
                                  pin_factory=factory)
-        # Start in safe carrying position
-        self.arm.angle  = ARM_DOWN
-        self.claw.angle = CLAW_CLOSED
-        time.sleep(0.5)
+        # Don't set any angles here — grab_sequence() handles the initial
+        # positioning. Setting angles in __init__ caused the arm to retract
+        # and claw to close visibly before the grab sequence even started.
+        #
+        # Detach both servos immediately so they don't jitter on startup.
+        self.arm.value  = None
+        self.claw.value = None
+
+    def _move_and_detach(self, servo, angle, wait):
+        """Move servo to angle, wait for it to arrive, then detach PWM.
+        Detaching (value=None) stops the continuous pulse that causes jitter.
+        The servo holds position mechanically via gear friction."""
+        servo.angle = angle
+        time.sleep(wait)
+        servo.value = None    # stop PWM — servo holds position, no jitter
 
     def grab_sequence(self):
         """
@@ -322,22 +333,18 @@ class ArmController:
         retract arm. Blocks until complete.
         """
         print('[ARM] Extending arm...')
-        self.arm.angle = ARM_UP
-        time.sleep(ARM_MOVE_TIME)
+        self._move_and_detach(self.arm, ARM_UP, ARM_MOVE_TIME)
 
         print('[ARM] Opening claw...')
-        self.claw.angle = CLAW_OPEN
-        time.sleep(CLAW_MOVE_TIME)
+        self._move_and_detach(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
 
         input('[ARM] Place block in claw, then press ENTER...')
 
         print('[ARM] Closing claw...')
-        self.claw.angle = CLAW_CLOSED
-        time.sleep(CLAW_MOVE_TIME)
+        self._move_and_detach(self.claw, CLAW_CLOSED, CLAW_MOVE_TIME)
 
         print('[ARM] Retracting arm...')
-        self.arm.angle = ARM_DOWN
-        time.sleep(ARM_MOVE_TIME)
+        self._move_and_detach(self.arm, ARM_DOWN, ARM_MOVE_TIME)
         print('[ARM] Block grabbed. Ready to drive.')
 
     def place_sequence(self):
@@ -346,24 +353,20 @@ class ArmController:
         Called after victory dance at the target location.
         """
         print('[ARM] Extending arm to place block...')
-        self.arm.angle = ARM_UP
-        time.sleep(ARM_MOVE_TIME)
+        self._move_and_detach(self.arm, ARM_UP, ARM_MOVE_TIME)
 
         print('[ARM] Opening claw (releasing block)...')
-        self.claw.angle = CLAW_OPEN
-        time.sleep(CLAW_MOVE_TIME)
+        self._move_and_detach(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
 
         print('[ARM] Retracting arm...')
-        self.arm.angle = ARM_DOWN
-        time.sleep(ARM_MOVE_TIME)
+        self._move_and_detach(self.arm, ARM_DOWN, ARM_MOVE_TIME)
         print('[ARM] Block placed.')
 
     def close(self):
         """Return to safe position and release servo resources."""
         try:
-            self.arm.angle  = ARM_DOWN
-            self.claw.angle = CLAW_CLOSED
-            time.sleep(0.5)
+            self._move_and_detach(self.arm, ARM_DOWN, 0.5)
+            self._move_and_detach(self.claw, CLAW_CLOSED, 0.5)
         except Exception:
             pass
         self.arm.close()
