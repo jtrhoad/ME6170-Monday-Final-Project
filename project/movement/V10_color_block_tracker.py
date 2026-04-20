@@ -319,13 +319,17 @@ class ArmController:
         self.arm.value  = None
         self.claw.value = None
 
-    def _move_and_detach(self, servo, angle, wait):
-        """Move servo to angle, wait for it to arrive, then detach PWM.
-        Detaching (value=None) stops the continuous pulse that causes jitter.
-        The servo holds position mechanically via gear friction."""
+    def _move(self, servo, angle, wait):
+        """Move servo to angle and wait for it to arrive."""
         servo.angle = angle
         time.sleep(wait)
-        servo.value = None    # stop PWM — servo holds position, no jitter
+
+    def _detach_all(self):
+        """Stop PWM on both servos to prevent jitter while idle.
+        Call this once at the END of a complete sequence, not between moves.
+        Re-engaging a detached servo mid-sequence can fail on some hardware."""
+        self.arm.value  = None
+        self.claw.value = None
 
     def grab_sequence(self):
         """
@@ -333,40 +337,47 @@ class ArmController:
         retract arm. Blocks until complete.
         """
         print('[ARM] Extending arm...')
-        self._move_and_detach(self.arm, ARM_UP, ARM_MOVE_TIME)
+        self._move(self.arm, ARM_UP, ARM_MOVE_TIME)
 
         print('[ARM] Opening claw...')
-        self._move_and_detach(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
+        self._move(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
 
         input('[ARM] Place block in claw, then press ENTER...')
 
         print('[ARM] Closing claw...')
-        self._move_and_detach(self.claw, CLAW_CLOSED, CLAW_MOVE_TIME)
+        self._move(self.claw, CLAW_CLOSED, CLAW_MOVE_TIME)
 
         print('[ARM] Retracting arm...')
-        self._move_and_detach(self.arm, ARM_DOWN, ARM_MOVE_TIME)
+        self._move(self.arm, ARM_DOWN, ARM_MOVE_TIME)
+
+        self._detach_all()
         print('[ARM] Block grabbed. Ready to drive.')
 
     def place_sequence(self):
         """
-        Extend arm, open claw (release block), retract arm.
+        Extend arm, open claw (release block), close claw, retract arm.
         Called after victory dance at the target location.
         """
         print('[ARM] Extending arm to place block...')
-        self._move_and_detach(self.arm, ARM_UP, ARM_MOVE_TIME)
+        self._move(self.arm, ARM_UP, ARM_MOVE_TIME)
 
         print('[ARM] Opening claw (releasing block)...')
-        self._move_and_detach(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
+        self._move(self.claw, CLAW_OPEN, CLAW_MOVE_TIME)
+
+        print('[ARM] Closing claw...')
+        self._move(self.claw, CLAW_CLOSED, CLAW_MOVE_TIME)
 
         print('[ARM] Retracting arm...')
-        self._move_and_detach(self.arm, ARM_DOWN, ARM_MOVE_TIME)
+        self._move(self.arm, ARM_DOWN, ARM_MOVE_TIME)
+
+        self._detach_all()
         print('[ARM] Block placed.')
 
     def close(self):
         """Return to safe position and release servo resources."""
         try:
-            self._move_and_detach(self.arm, ARM_DOWN, 0.5)
-            self._move_and_detach(self.claw, CLAW_CLOSED, 0.5)
+            self._move(self.arm, ARM_DOWN, 0.5)
+            self._move(self.claw, CLAW_CLOSED, 0.5)
         except Exception:
             pass
         self.arm.close()
