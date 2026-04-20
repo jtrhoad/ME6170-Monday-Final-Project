@@ -212,7 +212,7 @@ CLAW_CLOSED        = 0           # claw gripping block (negative = extra squeeze
 CLAW_OPEN          = 30           # claw released / ready to receive (degrees)
 ARM_MOVE_TIME      = 1.5          # seconds to wait after arm movement
 CLAW_MOVE_TIME     = 1.0          # seconds to wait after claw movement
-SERVO_STEP_DEG     = 15            # degrees per step for smooth servo movement
+SERVO_STEP_DEG     = 5            # degrees per step for smooth servo movement
 SERVO_STEP_DELAY   = 0.05         # seconds between steps (lower = faster)
 
 # ===========================================================================
