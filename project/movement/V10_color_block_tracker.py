@@ -208,10 +208,13 @@ ARM_GPIO           = 18           # GPIO pin for the arm servo
 CLAW_GPIO          = 19           # GPIO pin for the claw servo
 ARM_DOWN           = 180            # arm retracted / carrying position (degrees)
 ARM_UP             = 0          # arm fully extended (degrees)
-CLAW_CLOSED        = 0            # claw gripping block (degrees)
+CLAW_CLOSED        = -10           # claw gripping block (degrees, negative =
+                                   # extra squeeze past nominal zero)
 CLAW_OPEN          = 60           # claw released / ready to receive (degrees)
 ARM_MOVE_TIME      = 1.5          # seconds to wait after arm movement
 CLAW_MOVE_TIME     = 1.0          # seconds to wait after claw movement
+SERVO_STEP_DEG     = 5            # degrees per step for smooth servo movement
+SERVO_STEP_DELAY   = 0.03         # seconds between steps (lower = faster)
 
 # ===========================================================================
 # COLOR REGISTRY
@@ -308,7 +311,7 @@ class ArmController:
         self.arm = AngularServo(ARM_GPIO, min_angle=0, max_angle=180,
                                 min_pulse_width=0.0005, max_pulse_width=0.0025,
                                 pin_factory=factory)
-        self.claw = AngularServo(CLAW_GPIO, min_angle=0, max_angle=180,
+        self.claw = AngularServo(CLAW_GPIO, min_angle=-20, max_angle=180,
                                  min_pulse_width=0.0005, max_pulse_width=0.0025,
                                  pin_factory=factory)
         # Don't set any angles here — grab_sequence() handles the initial
@@ -319,10 +322,29 @@ class ArmController:
         self.arm.value  = None
         self.claw.value = None
 
-    def _move(self, servo, angle, wait):
-        """Move servo to angle and wait for it to arrive."""
-        servo.angle = angle
-        time.sleep(wait)
+    def _move(self, servo, target_angle, settle_time):
+        """Move servo to target_angle in small steps to avoid jitter.
+        Large jumps cause the servo to overshoot and oscillate. Stepping
+        in SERVO_STEP_DEG increments with SERVO_STEP_DELAY between them
+        produces smooth, controlled motion. After reaching the target,
+        waits settle_time for the servo to fully stabilize."""
+        current = servo.angle
+        if current is None:
+            # Servo was detached — jump directly, can't step from unknown
+            servo.angle = target_angle
+            time.sleep(settle_time)
+            return
+
+        step = SERVO_STEP_DEG if target_angle > current else -SERVO_STEP_DEG
+        pos  = current
+
+        while abs(pos - target_angle) > abs(step):
+            pos += step
+            servo.angle = pos
+            time.sleep(SERVO_STEP_DELAY)
+
+        servo.angle = target_angle
+        time.sleep(settle_time)
 
     def _detach_all(self):
         """Stop PWM on both servos to prevent jitter while idle.
