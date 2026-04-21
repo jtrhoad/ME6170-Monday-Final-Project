@@ -208,12 +208,12 @@ ARM_GPIO           = 18           # GPIO pin for the arm servo
 CLAW_GPIO          = 19           # GPIO pin for the claw servo
 ARM_DOWN           = 180            # arm retracted / carrying position (degrees)
 ARM_UP             = 0          # arm fully extended (degrees)
-CLAW_CLOSED        = 90           # claw gripping block (negative = extra squeeze)
-CLAW_OPEN          = 0           # claw released / ready to receive (degrees)
-ARM_MOVE_TIME      = 2.0          # seconds to wait after arm movement
-CLAW_MOVE_TIME     = 1.5          # seconds to wait after claw movement
-SERVO_STEP_DEG     = 3            # degrees per step for smooth servo movement
-SERVO_STEP_DELAY   = 0.03         # seconds between steps (lower = faster)
+CLAW_CLOSED        = 0           # claw gripping block (negative = extra squeeze)
+CLAW_OPEN          = 30           # claw released / ready to receive (degrees)
+ARM_MOVE_TIME      = 1.5          # seconds to wait after arm movement
+CLAW_MOVE_TIME     = 1.0          # seconds to wait after claw movement
+SERVO_STEP_DEG     = 5            # degrees per step for smooth servo movement
+SERVO_STEP_DELAY   = 0.02         # seconds between steps (lower = faster)
 
 # ===========================================================================
 # COLOR REGISTRY
@@ -308,14 +308,13 @@ class ArmController:
     def __init__(self):
         factory = LGPIOFactory()
         self.arm = AngularServo(ARM_GPIO, min_angle=0, max_angle=180,
-                                min_pulse_width=0.001, max_pulse_width=0.002,
+                                min_pulse_width=0.0005, max_pulse_width=0.0025,
                                 pin_factory=factory)
         self.claw = AngularServo(CLAW_GPIO, min_angle=0, max_angle=180,
-                                 min_pulse_width=0.001, max_pulse_width=0.002,
+                                 min_pulse_width=0.0003, max_pulse_width=0.0025,
                                  pin_factory=factory)
         self.arm.value  = None
         self.claw.value = None
-        time.sleep(1.0)
 
     def _move(self, servo, target_angle, settle_time):
         """Move servo to target_angle in small steps to reduce jitter.
