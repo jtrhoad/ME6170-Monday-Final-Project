@@ -311,7 +311,7 @@ class ArmController:
                                 min_pulse_width=0.0005, max_pulse_width=0.0025,
                                 pin_factory=factory)
         self.claw = AngularServo(CLAW_GPIO, min_angle=0, max_angle=180,
-                                 min_pulse_width=0.0003, max_pulse_width=0.0025,
+                                 min_pulse_width=0.0005, max_pulse_width=0.0025,
                                  pin_factory=factory)
         self.arm.value  = None
         self.claw.value = None
